@@ -122,7 +122,7 @@ static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> 
 	game.stage = stage
 	game.destination = dest
 	game.resolution = resolution
-	game.setup(m, board, str(stage.get("physics", "channel")))
+	game.setup(m, board, str(stage.get("physics", "channel")), str(stage.get("collect", "drain")))
 	var cfg := config()
 	var base: float = float(cfg.get("grains_per_second_at_128", 800.0))
 	game.grains_per_second = base * float(m.width * m.height) / 16384.0
@@ -134,7 +134,23 @@ static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> 
 		# Same on-screen fall speed at any resolution: cells per second scale with width.
 		game.fall_steps_per_second = float(gc.get("fall_cells_per_second_at_128", 60.0)) * m.width / 128.0
 		game.max_fall_steps_per_frame = int(gc.get("max_fall_steps_per_frame", 4))
+		if game.is_suction():
+			_configure_suction(game, gc.get("suction", {}), m, area)
 	return {"game": game, "errors": errors}
+
+
+## Rule B-2 settings. Distances are given in cells of the 128x128 sand grid and scaled by
+## width/128 here (64x64: link 3 -> 2 (rounded, min 1), reach 48 -> 24).
+static func _configure_suction(game: SandGame, sc: Dictionary, m: SandMap, area: float) -> void:
+	var d: SuctionDrain = game.collector
+	var scale := float(m.width) / 128.0
+	d.link = maxi(1, roundi(float(sc.get("link_cells_at_128", 3)) * scale))
+	d.reach = float(sc.get("reach_cells_at_128", 48)) * scale
+	d.finish_at = float(sc.get("finish_at", 0.9))
+	d.finish_speed_scale = float(sc.get("finish_speed_scale", 3.0))
+	d.scan_visits_per_frame = int(sc.get("scan_visits_per_frame", 15000))
+	if sc.has("collect_per_second_at_128"):
+		game.grains_per_second = float(sc.collect_per_second_at_128) * area
 
 
 ## Capacity "auto" (or absent): each color's sand count is split across that color's

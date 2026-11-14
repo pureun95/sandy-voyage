@@ -29,9 +29,22 @@ PC 창이 화면보다 크면 창 크기를 줄여도 됩니다. 화면은 비�
 
 ### 수집 규칙 요약
 
-스테이지마다 `data/stages.json`의 `"physics"` 값으로 규칙이 정해집니다.
+스테이지마다 `data/stages.json`의 `"physics"`와 `"collect"` 값으로 규칙이 정해집니다.
 
-**하와이 1 — 중력 규칙 (`"physics": "gravity"`)**
+**하와이 1 — 중력 + 범위 제한 연쇄 흡입 B-2 (`"physics": "gravity"`, `"collect": "suction"`)**
+
+거리는 모두 128×128 모래 격자의 **셀(모래 한 알) 단위**입니다(64 해상도에서는 절반으로 환산: 연결 2, 반경 24).
+
+- 블록 수집구 바로 위 셀에 **같은 색 모래가 직접 닿아야** 흡입이 시작됩니다.
+- 이미 끌려오는 모래에서 가로·세로 모두 **3셀 이내**(`max(|dx|,|dy|) ≤ 3`)에 있는 같은 색 모래가 연쇄로 함께 끌려옵니다. 사이에 다른 색이 있어도 건너뜁니다.
+- 수집구에서 **48셀 이내**(`√(dx²+dy²) ≤ 48`)의 모래만 대상입니다. 범위 밖 모래는 연쇄도 통하지 않습니다.
+- 다른 색은 절대 가져가지 않고, 블록의 남은 수용량보다 많이 가져가지 않습니다.
+- 수집된 모래는 격자에서 실제로 지워지고, 빈자리로 주변 모래가 떨어져 그림이 무너집니다.
+- **90% 마무리:** 블록이 수용량의 90%를 채우면, 그 색의 남은 모래를 거리 제한 없이 (남은 수용량만큼) 3배 속도로 빨아들입니다. 블록이 맨 윗줄에 있어야 하며, 끝나면 정확히 100%에서 블록이 사라집니다.
+- 연출: 모래 한 알마다 입자 하나가 그 알이 지워진 자리에서 출발해 수집구로 끌려 들어갑니다. 블록의 채움 %와 상단 진행률은 입자가 **도착한 만큼** 오릅니다.
+- 설정: `data/game_config.json` → `gravity.suction`(연결 거리, 반경, 90% 기준(0이면 끔), 마무리 속도, 수집 속도, 프레임당 탐색량), `gravity.suction_fx`(입자 속도·시간).
+
+**중력 규칙 A (`"collect": "drain"` 또는 생략) — 현재 사용하는 스테이지 없음, 비교용으로 유지**
 
 - 시작할 때는 그림이 빈칸 없이 꽉 차 있어서 움직이지 않습니다.
 - 맨 윗줄에 있는 블록 셀 중 위가 노출된 셀이 수집구입니다. 수집구 바로 위 픽셀에 **같은 색 모래가 직접 닿아야** 수집이 시작됩니다.
@@ -63,7 +76,7 @@ data/stages.json         스테이지 배치 (보드, 벽, 블록, capacity "aut
 data/game_config.json    수집 속도, 입자 수 제한, 기본 해상도(128)
 data/sounds.json         사운드 이벤트 → 오디오 파일 (비어 있으면 무음)
 scripts/sand/            SandMap: PNG 픽셀 → 색상 ID 모래 데이터, SandSim: 낙하 모래(활성 구역만 계산)
-scripts/core/            보드, 블록, 수집(통로: SandCollector, 중력: GravityDrain), 게임 상태, 로더, 검증기, 저장
+scripts/core/            보드, 블록, 수집(통로: SandCollector, 중력 A: GravityDrain, 중력 B-2: SuctionDrain), 게임 상태, 로더, 검증기, 저장
 scripts/ui/              화면과 렌더링 (게임 규칙 없음). 모래는 R8 텍스처 + 팔레트 셰이더로 그림
 scripts/autoload/        App(저장·설정), Sfx(사운드 이벤트)
 scripts/debug/autoplay.gd  실제 UI에 드래그·클릭을 주입해 자동 플레이
@@ -77,10 +90,11 @@ G=path/to/Godot_v4.7.2-stable_win64_console.exe
 $G --headless --path . --import                                   # 에셋/클래스 추가 후
 $G --headless --path . -s res://tests/test_sand_map.gd            # PNG → 모래 데이터
 $G --headless --path . -s res://tests/test_gameplay.gd            # 통로 규칙, 이동, 저장, 검증기
-$G --headless --path . -s res://tests/test_gravity.gd             # 중력 규칙, 하와이 1 끝까지 플레이
+$G --headless --path . -s res://tests/test_gravity.gd             # 중력 규칙 A (하와이 1을 A로 만들어 끝까지 플레이)
+$G --headless --path . -s res://tests/test_suction.gd             # 중력 B-2 흡입, 하와이 1 끝까지 플레이
 $G --headless --path . -s res://tests/validate_levels.gd          # 모든 스테이지, 128과 64
 $G --headless --path . -s res://tests/validate_levels.gd -- --stage=hawaii_01 --res=128 --plan
-$G --headless --path . -s res://tests/bench_collect.gd            # 로직 비용 128 vs 64
+$G --headless --path . -s res://tests/bench_collect.gd            # 로직 비용 128 vs 64 (B-2는 탐색 시간 포함)
 $G --path . -- --autoplay=hawaii_01 --res=128 --shots=<dir>       # UI 자동 플레이 + 스크린샷
 $G --path . -- --autoplay=all --shots=<dir>                       # 9개 스테이지를 UI로 순서대로
 $G --path . -- --autoplay=verify-save                             # 새 프로세스에서 저장 유지 확인

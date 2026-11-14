@@ -8,6 +8,22 @@
 		"_comment": "Stages with \"physics\": \"gravity\". collect = grains pulled into one block per second; fall = cells a grain falls per second (one simulation step per cell).",
 		"collect_per_second_at_128": 600,
 		"fall_cells_per_second_at_128": 60,
-		"max_fall_steps_per_frame": 4
+		"max_fall_steps_per_frame": 4,
+		"suction": {
+			"_comment": "Rule B-2, stages with \"collect\": \"suction\". Distances are in cells of the 128x128 sand grid (1 cell = 1 grain), scaled by width/128 at other resolutions. link: same-color grains chain when max(|dx|,|dy|) <= link. reach: only grains within this Euclidean distance of the block's nearest intake cell. finish_at: fraction of capacity that starts the finish pull of all remaining same-color grains (0 = off). collect_per_second: grains taken per second per block (finish: x finish_speed_scale). scan_visits_per_frame: cell checks per frame for the target search; larger scans continue next frame.",
+			"link_cells_at_128": 3,
+			"reach_cells_at_128": 48,
+			"finish_at": 0.9,
+			"finish_speed_scale": 3.0,
+			"collect_per_second_at_128": 600,
+			"scan_visits_per_frame": 15000
+		},
+		"suction_fx": {
+			"_comment": "Suction animation only (does not change collection). Flight time = distance / speed, clamped; finish pulls fly finish_speed_scale times faster.",
+			"cells_per_second_at_128": 70,
+			"min_seconds": 0.22,
+			"max_seconds": 0.8,
+			"finish_speed_scale": 1.6
+		}
 	}
 }

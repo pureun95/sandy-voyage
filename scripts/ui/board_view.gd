@@ -10,6 +10,7 @@ const AXIS_THRESHOLD := 10.0
 const SETTLE_SPEED := 14.0
 
 var game: SandGame
+var fx: GrainFx  # suction: fill follows landed grains
 var cell := 80.0
 
 var _drag: SandBlock
@@ -20,6 +21,7 @@ var _drag_min := 0.0
 var _drag_max := 0.0
 var _settle := {}       # block id -> Vector2 visual offset decaying to zero
 var _ghosts := []       # removed-block pop animations
+var _landing := []      # suction: removed blocks kept on screen until their last grains land
 var _hint := PackedInt32Array()  # column_reach() snapshot while dragging
 var _time := 0.0
 var _font: Font
@@ -123,7 +125,23 @@ func _release() -> void:
 	queue_redraw()
 
 
+## Fill shown in the block: suction grains count when they arrive.
+func shown_progress(b: SandBlock) -> float:
+	if b.capacity <= 0:
+		return 1.0
+	var flying := fx.pending(b.id) if fx != null and game.is_suction() else 0
+	return clampf(float(b.collected - flying) / b.capacity, 0.0, 1.0)
+
+
 func _on_block_filled(b: SandBlock) -> void:
+	if fx != null and game.is_suction() and fx.pending(b.id) > 0:
+		# Logic already freed the cells; keep drawing the block until the last grain lands.
+		_landing.append(b)
+		return
+	_pop(b)
+
+
+func _pop(b: SandBlock) -> void:
 	var rects := []
 	for c in b.cells:
 		rects.append(Rect2(Vector2(b.pos + c) * cell, Vector2(cell, cell)))
@@ -143,6 +161,10 @@ func _process(delta: float) -> void:
 				game.set_held(b, false)
 		else:
 			_settle[id] = o
+	for b in _landing.duplicate():
+		if fx == null or fx.pending(b.id) == 0:
+			_landing.erase(b)
+			_pop(b)
 	for g in _ghosts:
 		g.t += delta / 0.55
 	_ghosts = _ghosts.filter(func(g): return g.t < 1.0)
@@ -178,6 +200,8 @@ func _draw() -> void:
 			_draw_block(b)
 	if _drag != null:
 		_draw_block(_drag)
+	for b in _landing:
+		_draw_block(b)
 	for g in _ghosts:
 		var t: float = g.t
 		var col: Color = g.color
@@ -195,7 +219,8 @@ func _draw_block(b: SandBlock) -> void:
 	var bs := b.bounds_size()
 	var origin := Vector2(b.pos) * cell + visual_offset(b)
 	var inner_h := bs.y * cell
-	var fill_top := origin.y + inner_h * (1.0 - b.progress())
+	var shown := shown_progress(b)
+	var fill_top := origin.y + inner_h * (1.0 - shown)
 	var lift := 4.0 if b == _drag else 0.0
 	for c in b.cells:
 		var r := block_rect(b, c).grow(-4)
@@ -232,7 +257,7 @@ func _draw_block(b: SandBlock) -> void:
 				var r := block_rect(b, c)
 				draw_rect(Rect2(r.position.x + 4, r.position.y, r.size.x - 8, 6), Color(1, 1, 1, a))
 	# Percent label on the first cell.
-	var pct := "%d%%" % int(floor(b.progress() * 100.0))
+	var pct := "%d%%" % int(floor(shown * 100.0))
 	var first := block_rect(b, b.cells[0])
 	first.position.y -= lift
 	var fs := 22

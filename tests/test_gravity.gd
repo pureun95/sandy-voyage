@@ -1,5 +1,8 @@
 extends SceneTree
-## Gravity rule tests (Hawaii 1 physics): godot --headless --path . -s res://tests/test_gravity.gd
+## Gravity rule A tests (falling sand + contact-started 4-connected cluster drain):
+## godot --headless --path . -s res://tests/test_gravity.gd
+## hawaii_01 now ships with rule B-2 ("collect": "suction", see test_suction.gd); the Hawaii
+## checks here build hawaii_01 explicitly with rule A ("collect": "drain") so A stays covered.
 
 var failures := 0
 var passes := 0
@@ -35,6 +38,13 @@ func make_game(rows: Array, cols: int, board_rows: int, blocks: Array) -> SandGa
 	return g
 
 
+## hawaii_01 with collection rule A.
+func hawaii_a(res: int) -> SandGame:
+	var st := StageLoader.get_stage("hawaii_01").duplicate(true)
+	st["collect"] = "drain"
+	return StageLoader.build(st, res).game
+
+
 func blk(id: String, color: int, shape: String, pos: Vector2i, cap: int) -> SandBlock:
 	return SandBlock.create(id, color, SandBlock.shape_cells(shape), pos, cap)
 
@@ -56,8 +66,8 @@ func _init() -> void:
 
 func test_stable_start() -> void:
 	print("[stable start]")
-	var g: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 128).game
-	check(g.is_gravity(), "hawaii_01 runs the gravity rule")
+	var g := hawaii_a(128)
+	check(g.is_gravity() and not g.is_suction(), "hawaii_01 (rule A build) runs the gravity drain")
 	var before := g.map.cells.duplicate()
 	check(not g.sim.is_active(), "no active chunk at start (picture fully packed)")
 	var moved := 0
@@ -193,9 +203,9 @@ func test_block_removal() -> void:
 
 
 func test_hawaii_full_play() -> void:
-	print("[hawaii_01 gravity: full paced play]")
+	print("[hawaii_01 gravity rule A: full paced play]")
 	for res in [128, 64]:
-		var g: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), res).game
+		var g := hawaii_a(res)
 		var initial := g.map.count_by_color()
 		var caps := PackedInt32Array()
 		caps.resize(initial.size())
@@ -227,7 +237,7 @@ func test_hawaii_full_play() -> void:
 			full_ok = full_ok and b.removed and b.collected == b.capacity
 		check(full_ok, "@%d every block filled exactly to capacity and removed" % res)
 	# The picture really deforms: after the first collection the sim moves other grains.
-	var g2: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 128).game
+	var g2 := hawaii_a(128)
 	var j1 := g2.board.get_block("j1")
 	g2.try_move(j1, Vector2i.UP, 2)
 	var before := g2.map.cells.duplicate()
@@ -244,7 +254,7 @@ func test_hawaii_full_play() -> void:
 	check(j1.collected > 0 and changed_elsewhere > 100,
 		"collection makes the picture collapse (%d grains collected, %d other cells changed in 1.5s)" % [j1.collected, changed_elsewhere])
 	# Deterministic: same inputs, same sand.
-	var g3: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 128).game
+	var g3 := hawaii_a(128)
 	g3.try_move(g3.board.get_block("j1"), Vector2i.UP, 2)
 	for i in 90:
 		g3.tick(1.0 / 60.0)

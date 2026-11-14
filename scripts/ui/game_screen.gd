@@ -92,7 +92,14 @@ func _build() -> void:
 	fx = GrainFx.new()
 	fx.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	fx.grain = sand_view.grain_size()
+	var sfx_cfg: Dictionary = StageLoader.config().get("gravity", {}).get("suction_fx", {})
+	# Speed is given in sand cells per second of the 128 grid; same screen speed at any resolution.
+	fx.suction_speed = float(sfx_cfg.get("cells_per_second_at_128", 70.0)) * LAND_SIZE / 128.0
+	fx.suction_min = float(sfx_cfg.get("min_seconds", 0.22))
+	fx.suction_max = float(sfx_cfg.get("max_seconds", 0.8))
+	fx.suction_finish_scale = float(sfx_cfg.get("finish_speed_scale", 1.6))
 	add_child(fx)
+	board_view.fx = fx
 
 	game.grains_collected.connect(_on_grains)
 	game.stage_cleared.connect(_on_cleared)
@@ -114,6 +121,17 @@ func _on_grains(block: SandBlock, indices: PackedInt32Array) -> void:
 	var color: Color = game.map.palette[block.color_id]
 	var land_to_screen := sand_view.position
 	var board_to_screen := board_view.position
+	if game.is_suction():
+		# One particle per removed grain, starting at the exact cell that was just emptied.
+		var d: SuctionDrain = game.collector
+		var t := d.last_targets
+		for k in range(0, t.size(), 2):
+			var from := land_to_screen + sand_view.grain_center(t[k])
+			var via_local := sand_view.grain_center(t[k + 1])
+			var to := board_to_screen + board_view.intake_point(block, via_local.x)
+			fx.spawn_suction(from, land_to_screen + via_local, to, color, block.id, d.last_finishing)
+		Sfx.play("collect_grain", -6.0, 0.06)
+		return
 	if game.is_gravity():
 		# Each grain streams along its same-color path (cell -> intake pixel), then into the block.
 		for path: PackedInt32Array in game.collector.last_paths:
@@ -132,6 +150,14 @@ func _on_grains(block: SandBlock, indices: PackedInt32Array) -> void:
 	Sfx.play("collect_grain", -6.0, 0.06)
 
 
+## Progress as shown: suction grains count once they have landed in their block.
+func shown_progress() -> float:
+	if game.total == 0:
+		return 0.0
+	var flying := fx.in_flight_total() if game.is_suction() else 0
+	return 1.0 - float(game.remaining + flying) / game.total
+
+
 func _on_cleared() -> void:
 	App.save.mark_cleared(stage_id, str(game.destination.id))
 	_clear_pending = 0.9  # let the last grains land first
@@ -143,9 +169,10 @@ func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
 	game.tick(delta)
 	last_tick_usec = Time.get_ticks_usec() - t0
-	_progress.value = game.sand_progress()
-	_pct.text = "%d%%" % int(floor(game.sand_progress() * 100.0))
-	if _clear_pending > 0.0:
+	var shown := shown_progress()
+	_progress.value = shown
+	_pct.text = "%d%%" % int(floor(shown * 100.0))
+	if _clear_pending > 0.0 and fx.in_flight_total() == 0:  # wait for the last grains to land
 		_clear_pending -= delta
 		if _clear_pending <= 0.0:
 			_show_clear()

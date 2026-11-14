@@ -337,6 +337,12 @@ static func play_gravity(game: SandGame, max_states := 100000, max_ticks := 4000
 		collections += 1
 		game.tick(dt)
 		ticks += 1
+		# Suction may spread its first scan over a few frames before grains flow.
+		var wait := 0
+		while game.collected_last_tick == 0 and game.collector_busy() and wait < 120:
+			game.tick(dt)
+			ticks += 1
+			wait += 1
 		if game.collected_last_tick == 0:
 			push_error("LevelSolver: contact mask promised sand but none collected")
 			return {"status": "error"}

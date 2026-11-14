@@ -3,9 +3,15 @@ extends Control
 ## Flying sand grains (pure visual). Stores particles in packed arrays and draws them
 ## in one _draw call. The sand data is already updated when a grain spawns here.
 ##  - spawn():      channel rule, a curved flight from the landscape into the block.
-##  - spawn_path(): gravity rule, a grain travelling along its real same-color path to
+##  - spawn_path(): gravity rule A, a grain travelling along its real same-color path to
 ##                  the intake, then into the block (drawn lighter so the stream shows
 ##                  over sand of the same color).
+##  - spawn_suction(): gravity rule B-2, a grain lifted from its own cell (it appears there
+##                  the same frame the cell is emptied, so nothing vanishes), pulled with
+##                  growing speed to its intake cell, then into the block. Original color with
+##                  a contrasting rim and a short trail. Never dropped: one particle per
+##                  collected grain, and `in_flight[block id]` counts them until they land,
+##                  so the shown fill can follow the arriving grains.
 
 const PATH_POINTS := 8
 
@@ -28,6 +34,21 @@ var _pt := PackedFloat32Array()
 var _pd := PackedFloat32Array()
 var _pc := PackedColorArray()
 
+var suction_speed := 350.0   # px/s (set from config by the game screen)
+var suction_min := 0.22
+var suction_max := 0.8
+var suction_finish_scale := 1.6
+var in_flight := {}               # block id -> particles still flying to it
+var _sf := PackedVector2Array()   # from
+var _sc := PackedVector2Array()   # bezier control
+var _sv := PackedVector2Array()   # intake (landscape bottom)
+var _st := PackedVector2Array()   # inside the block
+var _su := PackedFloat32Array()   # 0..1
+var _sd := PackedFloat32Array()   # duration
+var _scol := PackedColorArray()
+var _srim := PackedColorArray()
+var _sid := PackedStringArray()
+
 
 func _ready() -> void:
 	mouse_filter = MOUSE_FILTER_IGNORE
@@ -38,7 +59,47 @@ func _ready() -> void:
 
 
 func count() -> int:
-	return _t.size() + _pt.size()
+	return _t.size() + _pt.size() + _su.size()
+
+
+func in_flight_total() -> int:
+	return _su.size()
+
+
+func pending(block_id: String) -> int:
+	return int(in_flight.get(block_id, 0))
+
+
+## `from`: the grain's cell centre; `via`: its intake cell centre; `to`: landing point in the block.
+func spawn_suction(from: Vector2, via: Vector2, to: Vector2, color: Color, block_id: String, finishing := false) -> void:
+	var d := from.distance_to(via) + via.distance_to(to) * 0.5
+	var dur := clampf(d / suction_speed, suction_min, suction_max) * randf_range(0.92, 1.08)
+	if finishing:
+		dur /= suction_finish_scale
+	# Control point: straight above the intake, a little toward the grain, plus a slight swirl,
+	# so grains curve in as if drawn by the block.
+	var side := Vector2(-(via.y - from.y), via.x - from.x).normalized() * randf_range(-0.12, 0.12) * from.distance_to(via)
+	_sf.append(from)
+	_sc.append(Vector2(lerpf(via.x, from.x, 0.35), lerpf(from.y, via.y, 0.55)) + side)
+	_sv.append(via)
+	_st.append(to)
+	_su.append(0.0)
+	_sd.append(dur)
+	_scol.append(color)
+	_srim.append(color.darkened(0.55) if color.get_luminance() > 0.45 else color.lightened(0.55))
+	_sid.append(block_id)
+	in_flight[block_id] = int(in_flight.get(block_id, 0)) + 1
+
+
+func _suction_pos(i: int, u: float) -> Vector2:
+	const SPLIT := 0.82
+	if u < SPLIT:
+		var e := u / SPLIT
+		e = e * e * (0.6 + 0.4 * e)  # starts slow (lifts from its cell), then accelerates
+		var a := _sf[i].lerp(_sc[i], e)
+		var b := _sc[i].lerp(_sv[i], e)
+		return a.lerp(b, e)
+	return _sv[i].lerp(_st[i], (u - SPLIT) / (1.0 - SPLIT))
 
 
 func spawn(from: Vector2, to: Vector2, color: Color) -> void:
@@ -77,8 +138,24 @@ func spawn_path(points: PackedVector2Array, color: Color) -> void:
 
 
 func _process(delta: float) -> void:
-	if _t.is_empty() and _pt.is_empty():
+	if _t.is_empty() and _pt.is_empty() and _su.is_empty():
 		return
+	var si := 0
+	while si < _su.size():
+		_su[si] += delta / _sd[si]
+		if _su[si] >= 1.0:
+			var id := _sid[si]
+			in_flight[id] = int(in_flight.get(id, 1)) - 1
+			if int(in_flight[id]) <= 0:
+				in_flight.erase(id)
+			var last := _su.size() - 1
+			_sf[si] = _sf[last]; _sc[si] = _sc[last]; _sv[si] = _sv[last]; _st[si] = _st[last]
+			_su[si] = _su[last]; _sd[si] = _sd[last]; _scol[si] = _scol[last]; _srim[si] = _srim[last]
+			_sid[si] = _sid[last]
+			_sf.resize(last); _sc.resize(last); _sv.resize(last); _st.resize(last)
+			_su.resize(last); _sd.resize(last); _scol.resize(last); _srim.resize(last); _sid.resize(last)
+		else:
+			si += 1
 	var i := 0
 	while i < _t.size():
 		_t[i] += delta / _dur[i]
@@ -129,3 +206,17 @@ func _draw() -> void:
 			d -= seg
 		var sc := 1.0 - 0.3 * t
 		draw_rect(Rect2(p - s * sc * 0.5, s * sc), _pc[i])
+	for i in _su.size():
+		var u := _su[i]
+		var col := _scol[i]
+		# Short trail (same color, fading) so the motion reads as a stream, not a jump.
+		for back in [0.08, 0.04]:
+			if u > back:
+				var q := _suction_pos(i, u - back)
+				var ts := s * (0.55 if back > 0.05 else 0.75)
+				draw_rect(Rect2(q - ts * 0.5, ts), Color(col, 0.35 if back > 0.05 else 0.6))
+		var p := _suction_pos(i, u)
+		var sc := 1.0 if u < 0.82 else 1.0 - 0.45 * (u - 0.82) / 0.18
+		var r := Rect2(p - s * sc * 0.5, s * sc)
+		draw_rect(r.grow(1.0), _srim[i])  # rim keeps it distinct over sand of any color
+		draw_rect(r, col)

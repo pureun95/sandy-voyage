@@ -6,6 +6,7 @@
 			"destination": "hawaii",
 			"name_ko": "하와이 1 · 첫 해변",
 			"physics": "gravity",
+			"collect": "suction",
 			"board": { "cols": 8, "rows": 5 },
 			"walls": [],
 			"blocks": [
