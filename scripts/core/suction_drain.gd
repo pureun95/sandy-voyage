@@ -128,6 +128,18 @@ func _begin_scan(block: SandBlock, s: Session) -> bool:
 	var intake := intake_pixels(block)
 	if intake.is_empty():
 		return false
+	var cells := map.cells
+	var color := block.color_id
+	if not s.finishing:
+		# Cheap contact test first: a resting block re-checks only its intake pixels every
+		# frame, so new contact (sand that fell onto it) starts a scan without moving it.
+		var touching := false
+		for i in intake:
+			if cells[i] == color:
+				touching = true
+				break
+		if not touching:
+			return false
 	# Per-x distance to the nearest intake column.
 	s.near_x.resize(w)
 	s.dxt.resize(w)
@@ -149,8 +161,6 @@ func _begin_scan(block: SandBlock, s: Session) -> bool:
 		s.finish_row = map.height - 1
 		s.scanning = true
 		return true
-	var cells := map.cells
-	var color := block.color_id
 	s.seen = PackedByteArray()
 	s.seen.resize(w * map.height)
 	for i in intake:

@@ -38,6 +38,17 @@ func make_game(rows: Array, cols: int, board_rows: int, blocks: Array) -> SandGa
 	return g
 
 
+## hawaii_01 opening (8x4 layout): palm cannot reach the landscape alone; the lagoon lid
+## has to make room. Palm right 3, lagoon left 2, palm up 1. Returns palm, or null if a
+## move was rejected.
+func open_palm(g: SandGame) -> SandBlock:
+	var p1 := g.board.get_block("p1")
+	var l1 := g.board.get_block("l1")
+	if not (g.try_move(p1, Vector2i.RIGHT, 3) and g.try_move(l1, Vector2i.LEFT, 2) and g.try_move(p1, Vector2i.UP, 1)):
+		return null
+	return p1
+
+
 ## hawaii_01 with collection rule A.
 func hawaii_a(res: int) -> SandGame:
 	var st := StageLoader.get_stage("hawaii_01").duplicate(true)
@@ -238,8 +249,8 @@ func test_hawaii_full_play() -> void:
 		check(full_ok, "@%d every block filled exactly to capacity and removed" % res)
 	# The picture really deforms: after the first collection the sim moves other grains.
 	var g2 := hawaii_a(128)
-	var j1 := g2.board.get_block("j1")
-	g2.try_move(j1, Vector2i.UP, 2)
+	var p1 := open_palm(g2)
+	check(p1 != null, "hawaii_01 opening: palm right, lagoon left, palm up are all legal moves")
 	var before := g2.map.cells.duplicate()
 	var collected_cells := {}
 	g2.grains_collected.connect(func(_b, idx):
@@ -251,11 +262,12 @@ func test_hawaii_full_play() -> void:
 	for i in before.size():
 		if before[i] != g2.map.cells[i] and not collected_cells.has(i):
 			changed_elsewhere += 1
-	check(j1.collected > 0 and changed_elsewhere > 100,
-		"collection makes the picture collapse (%d grains collected, %d other cells changed in 1.5s)" % [j1.collected, changed_elsewhere])
+	var got: int = p1.collected if p1 != null else 0
+	check(got > 0 and changed_elsewhere > 100,
+		"collection makes the picture collapse (%d grains collected, %d other cells changed in 1.5s)" % [got, changed_elsewhere])
 	# Deterministic: same inputs, same sand.
 	var g3 := hawaii_a(128)
-	g3.try_move(g3.board.get_block("j1"), Vector2i.UP, 2)
+	open_palm(g3)
 	for i in 90:
 		g3.tick(1.0 / 60.0)
 	check(g3.map.cells == g2.map.cells, "simulation is deterministic")

@@ -50,6 +50,17 @@ func at(g: SandGame, x: int, y: int) -> int:
 	return g.map.get_id(x, y)
 
 
+## hawaii_01 opening (8x4 layout): palm cannot reach the landscape alone; the lagoon lid
+## has to make room. Palm right 3, lagoon left 2, palm up 1. Returns palm, or null if a
+## move was rejected.
+func open_palm(g: SandGame) -> SandBlock:
+	var p1 := g.board.get_block("p1")
+	var l1 := g.board.get_block("l1")
+	if not (g.try_move(p1, Vector2i.RIGHT, 3) and g.try_move(l1, Vector2i.LEFT, 2) and g.try_move(p1, Vector2i.UP, 1)):
+		return null
+	return p1
+
+
 func _init() -> void:
 	test_setup()
 	test_contact()
@@ -58,6 +69,8 @@ func _init() -> void:
 	test_spread_scan()
 	test_capacity()
 	test_finish()
+	test_independent()
+	test_hawaii_restart()
 	test_hawaii()
 	print("PASSED %d  FAILURES %d" % [passes, failures])
 	quit(1 if failures > 0 else 0)
@@ -233,6 +246,139 @@ func test_finish() -> void:
 	check(g3.board.move(b3, Vector2i.UP, 1), "the other block moves up into the freed cell")
 
 
+## Collection depends on contact, never on whether the block moved: every resting block keeps
+## its own session and re-checks its intake each frame.
+func test_independent() -> void:
+	print("[independent blocks: restart on new contact, simultaneous, move/remove mid-collection]")
+	# 1-3) Red block A stands still at column 0 with blue on its intake (no contact). Blue block
+	# B at column 1 chains the blue grain under A away; red falls onto A's intake and A starts
+	# collecting by itself.
+	var a := blk("a", 0, Vector2i(0, 0), 3)
+	var b := blk("b", 1, Vector2i(1, 0), 2)
+	var g := make_game(["0...", "0...", "0...", "11.."], 1, [a, b])
+	var first := {}
+	var tick := [0]
+	g.grains_collected.connect(func(blk_: SandBlock, _idx): if not first.has(blk_.id): first[blk_.id] = tick[0])
+	check(g.collector.step(a, 1 << 30).is_empty(), "A has no contact at start (blue sits on its intake)")
+	for i in 300:
+		tick[0] = i
+		g.tick(1.0 / 60.0)
+		if g.cleared:
+			break
+	check(a.pos == Vector2i(0, 0) and a.collected == 3 and a.removed,
+		"A never moved, collected all 3 red grains once red fell onto its intake, removed at 3/3")
+	check(first.has("b") and first.has("a") and first.a > first.b,
+		"A started after B freed its intake (B tick %s, A tick %s)" % [first.get("b"), first.get("a")])
+	check(b.collected == 2 and g.cleared, "B took both blue grains; stage cleared")
+
+	# 4-7) Two blocks collect at once; B moves mid-collection; A is removed mid-collection.
+	var ra := blk("ra", 0, Vector2i(0, 0), 4)
+	var bb := blk("bb", 1, Vector2i(3, 0), 12, "I2h")  # covers both blue columns
+	var rows := []
+	for y in 6:
+		rows.append("00.11.")
+	var g2 := make_game(rows, 2, [ra, bb])
+	g2.grains_per_second = 60.0  # one grain per block per tick
+	var init := g2.map.count_by_color()
+	var per_tick := {}
+	g2.grains_collected.connect(func(blk_: SandBlock, idx: PackedInt32Array): per_tick[blk_.id] = int(per_tick.get(blk_.id, 0)) + idx.size())
+	var both_same_tick := false
+	var a_steady := true
+	var conserved := true
+	var b_after_a_removed := 0
+	var moved := false
+	var back := false
+	var b_while_down := 0
+	for i in 200:
+		per_tick.clear()
+		var a_before := ra.collected
+		g2.tick(1.0 / 60.0)
+		if per_tick.has("ra") and per_tick.has("bb"):
+			both_same_tick = true
+		if not ra.removed and i > 0 and ra.collected == a_before:
+			a_steady = false  # A must keep taking a grain every tick, also on B's move tick
+		if i == 2:
+			moved = g2.try_move(bb, Vector2i.DOWN, 1)  # B leaves the landscape while both collect
+		elif i > 2 and i <= 5 and moved and not back:
+			b_while_down += int(per_tick.get("bb", 0))
+		if i == 5:
+			back = g2.try_move(bb, Vector2i.UP, 1)  # and comes back: new session, contact again
+		if ra.removed:
+			b_after_a_removed += int(per_tick.get("bb", 0))
+		var now := g2.map.count_by_color()
+		for c in 2:
+			var got := ra.collected if c == 0 else bb.collected
+			if now[c] + got != init[c]:
+				conserved = false
+		if bb.removed:
+			break
+	check(both_same_tick, "both blocks collect in the same tick")
+	check(moved and back and b_while_down == 0, "B moved down mid-collection (stopped: no contact) and back up")
+	check(a_steady, "A kept collecting every tick while B moved (sessions are independent)")
+	check(ra.removed and ra.collected == 4, "A removed at exactly 4/4 while B was still collecting")
+	check(b_after_a_removed > 0 and bb.removed and bb.collected == 12,
+		"B kept collecting after A was removed (%d more), then filled %d/12" % [b_after_a_removed, bb.collected])
+	check(conserved, "per color: sand left + collected == initial after every tick (no grain counted twice)")
+
+
+## Real hawaii_01 sand: jungle collects and stays; palm then collects next to it; the sand that
+## falls onto jungle's intake is collected without moving jungle. Also: whenever a resting
+## block has contact (what the drag hint shows), it is collecting within a few frames.
+func test_hawaii_restart() -> void:
+	print("[hawaii_01: resting block restarts on new contact]")
+	for res in [128, 64]:
+		var g: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), res).game
+		var d: SuctionDrain = g.collector
+		var j := g.board.get_block("j1")
+		var p := g.board.get_block("p1")
+		# Legal, non-overlapping layout on the 8x4 board: jungle on row 0, the rest below.
+		var lay := {"j1": Vector2i(1, 0), "p1": Vector2i(3, 3), "l1": Vector2i(5, 3), "o1": Vector2i(6, 1), "f1": Vector2i(0, 2)}
+		for id in lay:
+			g.board.get_block(id).pos = lay[id]
+		check(g.board.validate().is_empty(), "@%d test layout is legal (no overlap, inside the board)" % res)
+		var worst := [0]
+		var run := {}
+		var watch := func() -> void:
+			for b in g.board.blocks:
+				if b.removed or b.contact_columns().is_empty():
+					continue
+				var masks := g.contact_masks()
+				var hinted := false
+				for c in b.contact_columns():
+					hinted = hinted or ((masks[c] >> b.color_id) & 1) == 1
+				if hinted and not d.is_collecting(b):
+					run[b.id] = int(run.get(b.id, 0)) + 1
+					worst[0] = maxi(worst[0], run[b.id])
+				else:
+					run.erase(b.id)
+		for i in 1200:
+			g.tick(1.0 / 60.0)
+			watch.call()
+			if g.is_idle():
+				break
+		var j_first := j.collected
+		check(j_first > 0, "@%d jungle collected at x1 (%d)" % [res, j_first])
+		p.pos = Vector2i(3, 0)
+		check(g.board.validate().is_empty(), "@%d palm placed next to jungle (x3)" % res)
+		g.collector.reset_session(p)
+		var j_before := j.collected
+		for i in 1800:
+			g.tick(1.0 / 60.0)
+			watch.call()
+			if g.is_idle() and i > 30:
+				break
+		check(j.pos == Vector2i(1, 0) and j.collected > j_before,
+			"@%d jungle never moved and collected %d more grains that fell onto it while palm collected %d" % [
+				res, j.collected - j_before, p.collected])
+		check(worst[0] <= 10, "@%d a resting block with contact (hint shown) collects within 10 frames (worst %d)" % [res, worst[0]])
+		var left := g.map.count_by_color()
+		var ok := g.remaining == g.total - j.collected - p.collected
+		for b in g.board.blocks:
+			ok = ok and b.collected <= b.capacity
+		check(ok and left[j.color_id] + j.collected == StageLoader.build(StageLoader.get_stage("hawaii_01"), res).game.map.count_by_color()[j.color_id],
+			"@%d sand conserved, no block above capacity" % res)
+
+
 func test_hawaii() -> void:
 	print("[hawaii_01 B-2: full paced play]")
 	for res in [128, 64]:
@@ -293,7 +439,8 @@ func test_hawaii() -> void:
 			"@%d finish triggered for all 5 blocks (%d grains, %.1f%% of sand)" % [res, d.finish_grains, 100.0 * d.finish_grains / g.total])
 	# Collapse: the first placement makes the rest of the picture move.
 	var g2: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 128).game
-	g2.try_move(g2.board.get_block("j1"), Vector2i.UP, 2)
+	var p2 := open_palm(g2)
+	check(p2 != null, "hawaii_01 opening: palm right, lagoon left, palm up are all legal moves")
 	var before := g2.map.cells.duplicate()
 	var taken := {}
 	g2.grains_collected.connect(func(_b, idx):
@@ -305,10 +452,10 @@ func test_hawaii() -> void:
 	for i in before.size():
 		if before[i] != g2.map.cells[i] and not taken.has(i):
 			moved += 1
-	check(g2.board.get_block("j1").collected > 0 and moved > 100,
+	check(p2 != null and p2.collected > 0 and moved > 100,
 		"suction makes the picture collapse (%d taken, %d other cells changed in 2s)" % [taken.size(), moved])
 	var g3: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 128).game
-	g3.try_move(g3.board.get_block("j1"), Vector2i.UP, 2)
+	open_palm(g3)
 	for i in 120:
 		g3.tick(1.0 / 60.0)
 	check(g3.map.cells == g2.map.cells, "deterministic")

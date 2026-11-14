@@ -7,14 +7,14 @@
 			"name_ko": "하와이 1 · 첫 해변",
 			"physics": "gravity",
 			"collect": "suction",
-			"board": { "cols": 8, "rows": 5 },
+			"board": { "cols": 8, "rows": 4 },
 			"walls": [],
 			"blocks": [
 				{ "id": "j1", "color": "jungle", "shape": "O", "pos": [1, 2], "capacity": "auto" },
-				{ "id": "p1", "color": "palm", "shape": "I2h", "pos": [4, 3], "capacity": "auto" },
-				{ "id": "l1", "color": "lagoon", "shape": "I3h", "pos": [5, 1], "capacity": "auto" },
-				{ "id": "o1", "color": "ocean", "shape": "Lr", "pos": [6, 3], "capacity": "auto" },
-				{ "id": "f1", "color": "foam", "shape": "I2v", "pos": [0, 3], "capacity": "auto" }
+				{ "id": "p1", "color": "palm", "shape": "I2h", "pos": [0, 1], "capacity": "auto" },
+				{ "id": "l1", "color": "lagoon", "shape": "I3h", "pos": [2, 0], "capacity": "auto" },
+				{ "id": "o1", "color": "ocean", "shape": "Lr", "pos": [4, 2], "capacity": "auto" },
+				{ "id": "f1", "color": "foam", "shape": "I2v", "pos": [6, 1], "capacity": "auto" }
 			]
 		},
 		{

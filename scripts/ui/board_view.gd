@@ -75,6 +75,8 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _press(p: Vector2) -> void:
+	if _drag != null:
+		_release()  # a release was lost (e.g. focus change): never leave a block held
 	var c := Vector2i(floori(p.x / cell), floori(p.y / cell))
 	var b := game.board.block_at(c)
 	if b == null or _settle.has(b.id):
@@ -83,7 +85,8 @@ func _press(p: Vector2) -> void:
 	_drag_start = p
 	_drag_axis = Vector2i.ZERO
 	_drag_offset = Vector2.ZERO
-	game.set_held(b, true)
+	# The block keeps collecting until the drag really starts (_motion locks an axis):
+	# selecting a block, or pressing without moving it, does not pause its suction.
 	# Hint: which intake columns could feed this block's color right now (same rule as collection).
 	_hint = game.contact_masks()
 	Sfx.play("drag_start")
@@ -95,6 +98,7 @@ func _motion(p: Vector2) -> void:
 		if d.length() < AXIS_THRESHOLD:
 			return
 		_drag_axis = Vector2i.RIGHT if absf(d.x) >= absf(d.y) else Vector2i.DOWN
+		game.set_held(_drag, true)  # lifted: stops collecting until it lands again
 		_drag_min = -game.board.max_steps(_drag, -_drag_axis) * cell
 		_drag_max = game.board.max_steps(_drag, _drag_axis) * cell
 	var along := d.x if _drag_axis == Vector2i.RIGHT else d.y
@@ -189,7 +193,11 @@ func _draw() -> void:
 	if _drag != null and not _hint.is_empty():
 		var hc: Color = game.map.palette[_drag.color_id]
 		var pulse := 0.3 + 0.15 * sin(_time * 6.0)
+		# Columns the dragged block already feeds from where it stands are not new targets.
+		var here := _drag.contact_columns()
 		for x in bd.cols:
+			if here.has(x):
+				continue
 			if (_hint[x] >> _drag.color_id) & 1 and not bd.walls.has(Vector2i(x, 0)):
 				var r := Rect2(Vector2(x, 0) * cell, Vector2(cell, cell)).grow(-3)
 				draw_rect(r, Color(hc, pulse))
