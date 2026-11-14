@@ -1,0 +1,11 @@
+{
+	"_comment": "Map sound events to audio files (res://...). Empty = silent. No audio assets are bundled yet.",
+	"events": {
+		"drag_start": "",
+		"block_land": "",
+		"collect_grain": "",
+		"block_full": "",
+		"stage_clear": "",
+		"ui_tap": ""
+	}
+}

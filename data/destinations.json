@@ -1,0 +1,53 @@
+{
+	"asset_dir": "res://assets/destinations/Sandy_Voyage_Assets_v2",
+	"destinations": [
+		{
+			"id": "hawaii",
+			"name_ko": "하와이",
+			"name_en": "Hawaii",
+			"album": "hawaii_album_1024.png",
+			"puzzle": { "64": "hawaii_puzzle_64_5colors.png", "128": "hawaii_puzzle_128_5colors.png" },
+			"expected_colors": 5,
+			"palette": [
+				{ "key": "jungle", "name_ko": "짙은 숲", "color": "#456761" },
+				{ "key": "lagoon", "name_ko": "라군", "color": "#41c5b6" },
+				{ "key": "palm", "name_ko": "야자잎", "color": "#c0cf86" },
+				{ "key": "ocean", "name_ko": "바다", "color": "#3495a0" },
+				{ "key": "foam", "name_ko": "물거품", "color": "#dff0af" }
+			]
+		},
+		{
+			"id": "fuji",
+			"name_ko": "후지산",
+			"name_en": "Mt. Fuji",
+			"album": "fuji_album_1024.png",
+			"puzzle": { "64": "fuji_puzzle_64_6colors.png", "128": "fuji_puzzle_128_6colors.png" },
+			"expected_colors": 6,
+			"palette": [
+				{ "key": "sky", "name_ko": "하늘", "color": "#28a6f9" },
+				{ "key": "blossom", "name_ko": "벚꽃", "color": "#fca8c8" },
+				{ "key": "pagoda", "name_ko": "탑", "color": "#cc6689" },
+				{ "key": "snow", "name_ko": "눈", "color": "#fcd9e4" },
+				{ "key": "mountain", "name_ko": "산", "color": "#3d6eb1" },
+				{ "key": "mist", "name_ko": "안개", "color": "#88b7c9" }
+			]
+		},
+		{
+			"id": "london",
+			"name_ko": "런던",
+			"name_en": "London",
+			"album": "london_album_1024.png",
+			"puzzle": { "64": "london_puzzle_64_7colors.png", "128": "london_puzzle_128_7colors.png" },
+			"expected_colors": 7,
+			"palette": [
+				{ "key": "dusk", "name_ko": "노을", "color": "#bf73c9" },
+				{ "key": "night", "name_ko": "밤", "color": "#5a59a3" },
+				{ "key": "tower", "name_ko": "시계탑", "color": "#fdbb88" },
+				{ "key": "cloud", "name_ko": "구름", "color": "#f990a6" },
+				{ "key": "bus", "name_ko": "버스", "color": "#b4578a" },
+				{ "key": "stone", "name_ko": "돌", "color": "#a88a9c" },
+				{ "key": "lamp", "name_ko": "가로등", "color": "#c3bb90" }
+			]
+		}
+	]
+}

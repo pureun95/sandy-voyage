@@ -1,0 +1,7 @@
+{
+	"grains_per_second_at_128": 800,
+	"max_visits_per_tick": 2000,
+	"particle_limit": 1200,
+	"particle_flight_seconds": [0.35, 0.6],
+	"default_resolution": 128
+}
