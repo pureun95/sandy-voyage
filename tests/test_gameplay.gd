@@ -151,7 +151,7 @@ func test_contact_rules() -> void:
 	check(red.collected == 0, "red block not touching (row 1) collects nothing")
 	g.board.move(red, Vector2i.UP, 1)
 	g.collector.reset_all()
-	var got := g.collector.step(red, 4)
+	var got: PackedInt32Array = g.collector.step(red, 4)
 	check(got.size() == 4, "red block touching red sand collects (step budget 4)")
 	var first_ok := true
 	for i in got:
@@ -266,7 +266,7 @@ func test_channel_start_rules() -> void:
 	#    Collection is progressive, nearest first (no far sand vanishing at once).
 	var r5 := blk("r5", 0, "dot", Vector2i(0, 0), 100)
 	var g5 := make_game(rows, 2, 1, [r5])
-	var first := g5.collector.step(r5, 4)
+	var first: PackedInt32Array = g5.collector.step(r5, 4)
 	var near_first := true
 	for i in first:
 		@warning_ignore("integer_division")
@@ -397,9 +397,11 @@ func test_validator_catches_bad_levels() -> void:
 
 
 func test_real_stage() -> void:
-	print("[hawaii_01 real play, paced ticks]")
+	# hawaii_01 now uses the gravity rule (covered by tests/test_gravity.gd); the channel
+	# rule's full paced play is checked on hawaii_02 instead.
+	print("[hawaii_02 real play (channel rule), paced ticks]")
 	for res in [128, 64]:
-		var built := StageLoader.build(StageLoader.get_stage("hawaii_01"), res)
+		var built := StageLoader.build(StageLoader.get_stage("hawaii_02"), res)
 		var g: SandGame = built.game
 		check(built.errors.is_empty(), "@%d builds without errors" % res)
 		var counts := g.map.count_by_color()

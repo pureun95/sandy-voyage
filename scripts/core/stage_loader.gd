@@ -122,11 +122,18 @@ static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> 
 	game.stage = stage
 	game.destination = dest
 	game.resolution = resolution
-	game.setup(m, board)
+	game.setup(m, board, str(stage.get("physics", "channel")))
 	var cfg := config()
 	var base: float = float(cfg.get("grains_per_second_at_128", 800.0))
 	game.grains_per_second = base * float(m.width * m.height) / 16384.0
 	game.max_visits_per_tick = int(cfg.get("max_visits_per_tick", 2000))
+	if game.is_gravity():
+		var gc: Dictionary = cfg.get("gravity", {})
+		var area := float(m.width * m.height) / 16384.0
+		game.grains_per_second = float(gc.get("collect_per_second_at_128", 600.0)) * area
+		# Same on-screen fall speed at any resolution: cells per second scale with width.
+		game.fall_steps_per_second = float(gc.get("fall_cells_per_second_at_128", 60.0)) * m.width / 128.0
+		game.max_fall_steps_per_frame = int(gc.get("max_fall_steps_per_frame", 4))
 	return {"game": game, "errors": errors}
 
 

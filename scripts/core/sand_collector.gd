@@ -220,6 +220,11 @@ func column_reach() -> PackedInt32Array:
 	return masks
 
 
+## Common collector interface (same name as GravityDrain.contact_masks()).
+func contact_masks() -> PackedInt32Array:
+	return column_reach()
+
+
 ## Colors (bitmask) `block` could collect if it stood at `at`, given `masks` from column_reach().
 static func reach_at(block: SandBlock, at: Vector2i, masks: PackedInt32Array) -> int:
 	var m := 0

@@ -3,7 +3,31 @@
 /android/
 *.tmp
 override.cfg
+
+# Export / build output
+/build/
+/builds/
+/export/
+*.apk
+*.aab
+*.ipa
+*.exe
+*.pck
+*.zip
+
+# Signing keys (never commit)
+*.keystore
+*.jks
+export_credentials.cfg
+
+# Python helpers (analysis venvs, caches)
+.venv/
+venv/
+__pycache__/
+
 # OS / editor
 .DS_Store
 Thumbs.db
+desktop.ini
 .vscode/
+.idea/

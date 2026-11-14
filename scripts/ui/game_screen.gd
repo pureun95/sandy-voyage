@@ -114,6 +114,17 @@ func _on_grains(block: SandBlock, indices: PackedInt32Array) -> void:
 	var color: Color = game.map.palette[block.color_id]
 	var land_to_screen := sand_view.position
 	var board_to_screen := board_view.position
+	if game.is_gravity():
+		# Each grain streams along its same-color path (cell -> intake pixel), then into the block.
+		for path: PackedInt32Array in game.collector.last_paths:
+			var pts := PackedVector2Array()
+			for c in path:
+				pts.append(land_to_screen + sand_view.grain_center(c))
+			var intake := sand_view.grain_center(path[path.size() - 1]).x
+			pts.append(board_to_screen + board_view.intake_point(block, intake))
+			fx.spawn_path(pts, color)
+		Sfx.play("collect_grain", -6.0, 0.06)
+		return
 	for i in indices:
 		var from := land_to_screen + sand_view.grain_center(i)
 		var to := board_to_screen + board_view.intake_point(block, sand_view.grain_center(i).x)

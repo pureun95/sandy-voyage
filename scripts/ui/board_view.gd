@@ -83,7 +83,7 @@ func _press(p: Vector2) -> void:
 	_drag_offset = Vector2.ZERO
 	game.set_held(b, true)
 	# Hint: which intake columns could feed this block's color right now (same rule as collection).
-	_hint = game.collector.column_reach()
+	_hint = game.contact_masks()
 	Sfx.play("drag_start")
 
 

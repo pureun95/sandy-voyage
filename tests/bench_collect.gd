@@ -16,16 +16,17 @@ func _init() -> void:
 		var reach := PackedFloat32Array()
 		var frames := 0
 		var guard := 0
-		while not g.cleared and guard < 300:
+		while not g.cleared and guard < 5000:
 			guard += 1
-			var r := LevelSolver.find_next(g.board, g.collector)
+			var r := LevelSolver.find_next_tiered(g.board, g.collector) if g.is_gravity() 				else LevelSolver.find_next(g.board, g.collector)
 			if r.status != "found":
 				break
 			for m in r.moves:
 				g.try_move(g.board.get_block(m.id), m.dir, m.steps)
-			g.collector._reach_changes = -1  # measure uncached cost
 			var t0 := Time.get_ticks_usec()
-			g.collector.column_reach()
+			if not g.is_gravity():
+				g.collector._reach_changes = -1  # measure uncached cost
+			g.contact_masks()  # drag-hint cost
 			reach.append((Time.get_ticks_usec() - t0) / 1000.0)
 			var rem_before := g.remaining
 			var idle := 0
@@ -35,11 +36,11 @@ func _init() -> void:
 				g.tick(1.0 / 60.0)
 				ticks.append((Time.get_ticks_usec() - t1) / 1000.0)
 				frames += 1
-				idle = idle + 1 if g.remaining == before else 0
+				idle = idle + 1 if g.remaining == before and g.is_idle() else 0
 			if g.remaining == rem_before:
 				print("  STALL: planned contact collected nothing (block %s)" % r.block_id)
 				break
-		print("[%s @%d] cleared=%s grains=%d frames=%d (%.1fs collecting)  tick ms: %s  column_reach ms: %s" % [
+		print("[%s @%d] cleared=%s grains=%d frames=%d (%.1fs collecting)  tick ms: %s  hint(contact mask) ms: %s" % [
 			stage_id, res, g.cleared, g.total, frames, frames / 60.0, _stats(ticks), _stats(reach)])
 	quit()
 

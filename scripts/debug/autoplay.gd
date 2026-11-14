@@ -88,10 +88,11 @@ func _run_one() -> void:
 		stage_id, _gs.game.map.width, _gs.game.cleared, _drags, _drag_mismatch, play_s, _gs.game.remaining,
 		App.save.is_unlocked(_gs.game.destination.id)])
 	_report()
+	var ok := _gs.game.cleared and _failures.is_empty()
 	main.show_album()
 	await _frames_wait(20)
 	await _shot("11_album")
-	get_tree().quit(0 if _gs.game.cleared and _failures.is_empty() else 1)
+	get_tree().quit(0 if ok else 1)
 
 
 # ---------------------------------------------------------------- all stages via UI
@@ -176,9 +177,9 @@ func _play_current(take_shots: bool) -> void:
 	var next_shot_t := 0.0
 	var t0 := Time.get_ticks_msec()
 	var guard := 0
-	while not _gs.game.cleared and guard < 400:
+	while not _gs.game.cleared and guard < 5000:
 		guard += 1
-		var r := LevelSolver.find_next(_gs.game.board, _gs.game.collector)
+		var r := LevelSolver.find_next_tiered(_gs.game.board, _gs.game.collector) if _gs.game.is_gravity() 			else LevelSolver.find_next(_gs.game.board, _gs.game.collector)
 		if r.status != "found":
 			_fail("%s: no further collectible layout (%s); remaining=%d" % [_gs.stage_id, r.status, _gs.game.remaining])
 			break
@@ -187,9 +188,7 @@ func _play_current(take_shots: bool) -> void:
 		var idle := 0
 		while idle < 25 and not _gs.game.cleared:
 			await get_tree().process_frame
-			var busy := _gs.fx.count() > 0
-			for b in _gs.game.board.active_blocks():
-				busy = busy or _gs.game.collector.is_collecting(b)
+			var busy := _gs.fx.count() > 0 or not _gs.game.is_idle()
 			idle = 0 if busy else idle + 1
 			var t := (Time.get_ticks_msec() - t0) / 1000.0
 			if take_shots and busy and t >= next_shot_t and shot_n < 9:

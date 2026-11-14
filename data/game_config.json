@@ -3,5 +3,11 @@
 	"max_visits_per_tick": 2000,
 	"particle_limit": 1200,
 	"particle_flight_seconds": [0.35, 0.6],
-	"default_resolution": 128
+	"default_resolution": 128,
+	"gravity": {
+		"_comment": "Stages with \"physics\": \"gravity\". collect = grains pulled into one block per second; fall = cells a grain falls per second (one simulation step per cell).",
+		"collect_per_second_at_128": 600,
+		"fall_cells_per_second_at_128": 60,
+		"max_fall_steps_per_frame": 4
+	}
 }
