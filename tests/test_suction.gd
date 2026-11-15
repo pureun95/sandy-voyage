@@ -86,6 +86,16 @@ func test_setup() -> void:
 	var g64: SandGame = StageLoader.build(StageLoader.get_stage("hawaii_01"), 64).game
 	var d64: SuctionDrain = g64.collector
 	check(d64.link == 2 and is_equal_approx(d64.reach, 24.0), "64 grid: scaled to link 2, reach 24 cells")
+	check(not g.sim.diagonal_needs_side_gap and not g64.sim.diagonal_needs_side_gap,
+		"hawaii_01 uses the original diagonal rule at 128 and 64 (side-gap variant not adopted)")
+	var gc: Dictionary = StageLoader.config().get("gravity", {})
+	check(gc.get("diagonal_needs_side_gap", true) == false, "gravity default keeps the original diagonal rule")
+	check(g.sim.column_wake and g64.sim.column_wake and gc.get("column_wake", true) == false,
+		"hawaii_01 uses column wake at 128 and 64; the gravity default keeps it off")
+	var flipped: Dictionary = StageLoader.get_stage("hawaii_01").duplicate(true)
+	flipped["diagonal_needs_side_gap"] = true
+	check(StageLoader.build(flipped, 128).game.sim.diagonal_needs_side_gap,
+		"the stage setting still switches the side-gap variant on for comparison")
 	for id in ["hawaii_02", "fuji_01", "london_03"]:
 		var o: SandGame = StageLoader.build(StageLoader.get_stage(id), 128).game
 		check(not o.is_gravity() and not o.is_suction(), "%s keeps the channel rule" % id)

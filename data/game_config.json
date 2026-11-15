@@ -9,6 +9,10 @@
 		"collect_per_second_at_128": 600,
 		"fall_cells_per_second_at_128": 60,
 		"max_fall_steps_per_frame": 4,
+		"_comment_diagonal": "diagonal_needs_side_gap: default for gravity stages (a stage's own \"diagonal_needs_side_gap\" wins). false = original rule: a grain blocked below slides to an empty diagonal cell. true = it also needs the side cell at its own height empty (slides on open slopes, never squeezes through gaps inside the pile; much less color mixing).",
+		"diagonal_needs_side_gap": false,
+		"_comment_column_wake": "column_wake: default for gravity stages (a stage's own \"column_wake\" wins). true = a grain removed by collection wakes every simulation chunk above it (its chunk column and the two beside it), so the sand above drops in one pass instead of leaving a gap that climbs one 8x8 chunk per step.",
+		"column_wake": false,
 		"suction": {
 			"_comment": "Rule B-2, stages with \"collect\": \"suction\". Distances are in cells of the 128x128 sand grid (1 cell = 1 grain), scaled by width/128 at other resolutions. link: same-color grains chain when max(|dx|,|dy|) <= link. reach: only grains within this Euclidean distance of the block's nearest intake cell. finish_at: fraction of capacity that starts the finish pull of all remaining same-color grains (0 = off). collect_per_second: grains taken per second per block (finish: x finish_speed_scale). scan_visits_per_frame: cell checks per frame for the target search; larger scans continue next frame.",
 			"link_cells_at_128": 3,

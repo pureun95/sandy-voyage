@@ -134,6 +134,11 @@ static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> 
 		# Same on-screen fall speed at any resolution: cells per second scale with width.
 		game.fall_steps_per_second = float(gc.get("fall_cells_per_second_at_128", 60.0)) * m.width / 128.0
 		game.max_fall_steps_per_frame = int(gc.get("max_fall_steps_per_frame", 4))
+		# Diagonal slide rule: stage value wins, else the gravity default (false = original rule).
+		game.sim.diagonal_needs_side_gap = bool(stage.get("diagonal_needs_side_gap",
+			gc.get("diagonal_needs_side_gap", false)))
+		# Wake the whole column above a removed grain: stage value wins, else the gravity default.
+		game.sim.column_wake = bool(stage.get("column_wake", gc.get("column_wake", false)))
 		if game.is_suction():
 			_configure_suction(game, gc.get("suction", {}), m, area)
 	return {"game": game, "errors": errors}

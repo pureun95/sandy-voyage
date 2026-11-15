@@ -6,6 +6,12 @@ extends RefCounted
 ## is solid floor (grains are only removed there by a drain, never fall into the board).
 ## No momentum, friction or pressure; repose angle is 45 degrees.
 ##
+## `diagonal_needs_side_gap` (stage/config "diagonal_needs_side_gap"): a diagonal move also
+## needs the side cell at the grain's own height to be empty. Grains still slide down open
+## slopes, but no longer squeeze through a diagonal gap inside the pile. That squeezing (a
+## hole opened by a neighbor column falling in the same pass, taken diagonally) is what made
+## neighbor columns zip together and the picture dissolve into speckles.
+##
 ## Only "active" 8x8 chunks are scanned. A chunk wakes when a grain in or next to it moves
 ## or a cell in it is emptied. A fully packed picture has no empty cells, so nothing moves
 ## until collection makes a hole: the start is stable by construction.
@@ -14,6 +20,10 @@ const EMPTY := SandMap.EMPTY
 const CHUNK := 8
 
 var map: SandMap
+## false: original rule (diagonal cell empty). true: the side cell must be empty too.
+var diagonal_needs_side_gap := false
+## Stage/config "column_wake": a removed grain wakes the whole column above it (see wake()).
+var column_wake := false
 var steps := 0
 var last_moves := 0
 var _cw := 0
@@ -37,13 +47,24 @@ func active_chunks() -> int:
 
 
 ## Mark the chunk holding `index` (and the chunks that could fall into it) for simulation.
+## With `column_wake`, every chunk above it in its chunk column and the two neighbor chunk
+## columns is marked too, so the whole column above a removed grain drops in one pass.
+## Without it the column above wakes one chunk per step, and the hole climbs as a visible
+## gap line (8 cells per frame) before it closes.
 func wake(index: int) -> void:
 	var x := index % map.width
 	@warning_ignore("integer_division")
 	var cx := x / CHUNK
 	@warning_ignore("integer_division")
 	var cy := index / map.width / CHUNK
-	_mark(_active, cx, cy)
+	if not column_wake:
+		_mark(_active, cx, cy)
+		return
+	for y in range(cy, -1, -1):
+		for dx in [-1, 0, 1]:
+			var xx: int = cx + dx
+			if xx >= 0 and xx < _cw:
+				_active[y * _cw + xx] = 1
 
 
 func _mark(a: PackedByteArray, cx: int, cy: int) -> void:
@@ -97,9 +118,11 @@ func step() -> int:
 					var r := b + 1 if x < w - 1 else -1
 					var a := l if left_first else r
 					var c := r if left_first else l
-					if a >= 0 and cells[a] == EMPTY:
+					var gap := diagonal_needs_side_gap
+					# (a - b) is -1 or +1: the side cell next to the grain toward that diagonal.
+					if a >= 0 and cells[a] == EMPTY and (not gap or cells[i + a - b] == EMPTY):
 						t = a
-					elif c >= 0 and cells[c] == EMPTY:
+					elif c >= 0 and cells[c] == EMPTY and (not gap or cells[i + c - b] == EMPTY):
 						t = c
 				if t < 0:
 					continue

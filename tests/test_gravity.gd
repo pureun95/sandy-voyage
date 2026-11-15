@@ -49,10 +49,12 @@ func open_palm(g: SandGame) -> SandBlock:
 	return p1
 
 
-## hawaii_01 with collection rule A.
+## hawaii_01 with collection rule A, kept for comparison with the physics it was built for
+## (original diagonal rule; hawaii_01 itself now uses diagonal_needs_side_gap).
 func hawaii_a(res: int) -> SandGame:
 	var st := StageLoader.get_stage("hawaii_01").duplicate(true)
 	st["collect"] = "drain"
+	st["diagonal_needs_side_gap"] = false
 	return StageLoader.build(st, res).game
 
 
@@ -103,6 +105,66 @@ func test_fall_rules() -> void:
 	var went_left := at(d, 0, 1) == 0
 	var went_right := at(d, 2, 1) == 0
 	check(at(d, 1, 0) == SandMap.EMPTY and (went_left != went_right), "blocked below -> slides diagonally down")
+	# Diagonal rule, both modes. Squeeze case: red at (1,0) is blocked below and its right side
+	# cell holds blue that is about to fall (the "hole opened by a falling neighbor" case).
+	# steps = 1 makes the next step scan left to right, so red is visited before blue.
+	for gap in [false, true]:
+		var s := make_game([".01", "11."], 3, 1, [])
+		s.sim.diagonal_needs_side_gap = gap
+		s.sim.steps = 1
+		s.sim.wake(1)
+		s.sim.step()
+		if gap:
+			check(at(s, 1, 0) == 0 and at(s, 2, 1) == 1,
+				"side gap ON: side cell occupied -> no diagonal squeeze (red stays, blue falls into the hole)")
+		else:
+			check(at(s, 2, 1) == 0 and at(s, 1, 0) == SandMap.EMPTY,
+				"side gap OFF (original): red squeezes diagonally past the blue beside it")
+		var o := make_game([".0.", ".1."], 3, 1, [])
+		o.sim.diagonal_needs_side_gap = gap
+		o.sim.wake(1)
+		o.sim.step()
+		check(at(o, 1, 0) == SandMap.EMPTY and (at(o, 0, 1) == 0) != (at(o, 2, 1) == 0),
+			"side gap %s: open slope (side cells empty) -> slides diagonally" % ("ON" if gap else "OFF"))
+	# A dropped column forms the same 45-degree pile in both modes (open slopes keep sliding).
+	var piles := []
+	for gap in [false, true]:
+		var pl := make_game(["...0...", "...0...", "...0...", "...0...", "...0...", "...0...", "...0...", "...0...", "...0..."], 7, 1, [])
+		pl.sim.diagonal_needs_side_gap = gap
+		for i in 7 * 9:
+			pl.sim.wake(i)
+		pl.sim.settle()
+		piles.append(pl.map.cells)
+		var bottom := 0
+		for x in 7:
+			if at(pl, x, 8) != SandMap.EMPTY:
+				bottom += 1
+		check(pl.map.remaining() == 9 and bottom >= 5,
+			"side gap %s: a 9-grain column settles into a pile %d wide, no grain lost" % ["ON" if gap else "OFF", bottom])
+	check(piles[0] == piles[1], "both modes give the same pile from a free-standing column")
+	# Column wake: a full 1x32 column loses its bottom grain (as a drain would remove it).
+	for cw in [false, true]:
+		var rows := []
+		for y in 32:
+			rows.append("0")
+		var col := make_game(rows, 1, 1, [])
+		col.sim.column_wake = cw
+		col.map.cells[31] = SandMap.EMPTY
+		col.sim.wake(31)
+		col.sim.step()
+		var gaps := 0  # empty cells below the topmost grain
+		var seen := false
+		for y in 32:
+			if at(col, 0, y) != SandMap.EMPTY:
+				seen = true
+			elif seen:
+				gaps += 1
+		if cw:
+			check(gaps == 0 and at(col, 0, 0) == SandMap.EMPTY and col.map.remaining() == 31,
+				"column wake ON: the whole column above the hole drops in one step (no gap left)")
+		else:
+			check(gaps == 1 and at(col, 0, 0) == 0 and col.map.remaining() == 31,
+				"column wake OFF (original): only the woken chunks drop; one gap is left inside the column")
 	var f := make_game(["0.."], 3, 1, [])
 	f.sim.wake(0)
 	for i in 10:
