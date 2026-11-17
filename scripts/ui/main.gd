@@ -1,5 +1,5 @@
 extends Control
-## Root: switches between stage list, game and album.
+## Root: switches between home, world map, continent (+ destination sheet), album and game.
 ## Debug: `-- --autoplay=<stage_id> --shots=<dir>` plays the stage via simulated drags.
 
 var _screen: Control
@@ -18,7 +18,7 @@ func _ready() -> void:
 		pilot.stage_id = auto
 		add_child(pilot)
 	else:
-		show_stage_select()
+		show_home()
 
 
 func _swap(c: Control) -> void:
@@ -29,23 +29,52 @@ func _swap(c: Control) -> void:
 	move_child(c, 0)
 
 
-func show_stage_select() -> void:
-	var s := StageSelect.new()
-	s.stage_chosen.connect(show_game)
-	s.album_requested.connect(show_album)
-	_swap(s)
+func show_home() -> HomeScreen:
+	var h := HomeScreen.new()
+	h.stage_chosen.connect(show_game)
+	h.map_requested.connect(show_world_map)
+	h.album_requested.connect(func(): show_album())
+	_swap(h)
+	return h
+
+
+func show_world_map() -> WorldMapScreen:
+	var w := WorldMapScreen.new()
+	w.back_requested.connect(show_home)
+	w.continent_chosen.connect(func(cid): show_continent(cid))
+	_swap(w)
+	return w
+
+
+## `open_destination` opens that destination's sheet on top (e.g. returning from a stage).
+func show_continent(continent_id: String, open_destination := "") -> ContinentScreen:
+	var c := ContinentScreen.new()
+	c.continent_id = continent_id
+	c.open_destination = open_destination
+	c.back_requested.connect(show_world_map)
+	c.stage_chosen.connect(show_game)
+	c.album_requested.connect(func(cid): show_album(cid))
+	_swap(c)
+	return c
+
+
+func show_destination(destination_id: String) -> ContinentScreen:
+	var d := TravelCatalog.destination(destination_id)
+	return show_continent(str(d.get("continent", "")), destination_id)
 
 
 func show_game(stage_id: String) -> GameScreen:
 	var g := GameScreen.new()
-	g.exit_requested.connect(show_stage_select)
+	g.exit_requested.connect(func(): show_destination(str(TravelCatalog.split_stage_id(g.stage_id).get("destination", ""))))
 	g.next_requested.connect(show_game)
 	_swap(g)
 	g.start(stage_id)
 	return g
 
 
-func show_album() -> void:
+func show_album(continent_id := "") -> AlbumScreen:
 	var a := AlbumScreen.new()
-	a.back_requested.connect(show_stage_select)
+	a.continent_id = continent_id
+	a.back_requested.connect(show_home)
 	_swap(a)
+	return a

@@ -1,6 +1,9 @@
 class_name SaveStore
 extends RefCounted
 ## Local progress: cleared stages, unlocked album entries, settings. JSON in user://.
+## Keys: cleared {stage_id: {at}} (also the per-stage postcards), album {destination_id: {at,
+## first_stage}} (first clear of a destination, kept as before), last_played (stage id, "" = none),
+## settings. Older saves without a key load with its default; purchases are NOT stored here.
 
 const VERSION := 1
 
@@ -14,7 +17,7 @@ func _init(p_path := "user://save.json") -> void:
 
 
 static func _defaults() -> Dictionary:
-	return {"version": VERSION, "cleared": {}, "album": {},
+	return {"version": VERSION, "cleared": {}, "album": {}, "last_played": "",
 		"settings": {"resolution": 128, "sound": true}}
 
 
@@ -57,6 +60,21 @@ func is_cleared(stage_id: String) -> bool:
 
 func is_unlocked(destination_id: String) -> bool:
 	return data.album.has(destination_id)
+
+
+func last_played() -> String:
+	return str(data.get("last_played", ""))
+
+
+func set_last_played(stage_id: String) -> void:
+	if data.last_played == stage_id:
+		return
+	data.last_played = stage_id
+	save_data()
+
+
+func clear_time(stage_id: String) -> int:
+	return int(data.cleared.get(stage_id, {}).get("at", 0))
 
 
 func get_setting(key: String, default: Variant = null) -> Variant:

@@ -4,9 +4,12 @@ extends Node
 ## Uses an isolated save file (user://autoplay_save.json); the player's save is untouched.
 ##
 ##   godot --path . -- --autoplay=hawaii_01 [--res=128] [--shots=DIR]   one stage
-##   godot --path . -- --autoplay=all [--res=128] [--shots=DIR]         every stage in order via
-##                                                                      "다음 스테이지", then list + album
+##   godot --path . -- --autoplay=all [--res=128] [--shots=DIR]         every stage in order: home ->
+##        "여행 시작하기", "다음 스테이지" inside a destination, the destination sheet's "출발!" for
+##        the next destination; then home / world map / album
 ##   godot --path . -- --autoplay=verify-save                           new process: check saved progress
+##   godot --path . -- --autoplay=ui-shots --shots=DIR                  screenshots of every travel screen
+##        (fresh save, then a seeded mid-journey save; isolated save file)
 
 const SAVE_PATH := "user://autoplay_save.json"
 
@@ -42,6 +45,8 @@ func _ready() -> void:
 		DirAccess.make_dir_recursive_absolute(shots_dir)
 	if stage_id == "all":
 		_run_all.call_deferred()
+	elif stage_id == "ui-shots":
+		_run_ui_shots.call_deferred()
 	else:
 		_run_one.call_deferred()
 
@@ -73,9 +78,9 @@ func _fail(msg: String) -> void:
 # ---------------------------------------------------------------- single stage
 
 func _run_one() -> void:
-	main.show_stage_select()
+	main.show_home()
 	await _frames_wait(20)
-	await _shot("00_stage_select")
+	await _shot("00_home")
 	_gs = main.show_game(stage_id)
 	await _frames_wait(30)
 	await _shot("01_start")
@@ -99,11 +104,11 @@ func _run_one() -> void:
 
 func _run_all() -> void:
 	var stages := StageLoader.stages()
-	main.show_stage_select()
+	main.show_home()
 	await _frames_wait(20)
-	await _shot("00_stage_select")
-	if not await _click_button(main, str(stages[0].name_ko)):
-		_fail("first stage button not found")
+	await _shot("00_home")
+	if not await _click_button(main, "여행 시작하기"):
+		_fail("home start button not found")
 	for i in stages.size():
 		await _frames_wait(20)
 		_gs = main._screen as GameScreen
@@ -121,35 +126,118 @@ func _run_all() -> void:
 			w += 1
 		await _frames_wait(10)
 		await _shot("%02d_%s_clear" % [i + 1, stages[i].id])
-		print("STAGE %d %s cleared=%s drags=%d play=%.1fs saved=%s album[%s]=%s" % [i + 1, stages[i].id,
+		print("STAGE %d %s cleared=%s drags=%d play=%.1fs saved=%s album[%s]=%s last_played=%s" % [i + 1, stages[i].id,
 			_gs.game.cleared, _drags - drags_before, play_s, App.save.is_cleared(stages[i].id),
-			stages[i].destination, App.save.is_unlocked(stages[i].destination)])
+			stages[i].destination, App.save.is_unlocked(stages[i].destination), App.save.last_played()])
 		if not _gs.game.cleared or not App.save.is_cleared(stages[i].id):
 			_fail("stage %s not cleared/saved" % stages[i].id)
 			break
-		var label := "다음 스테이지" if i + 1 < stages.size() else "스테이지 목록"
-		if not await _click_button(_gs, label):
-			_fail("button '%s' not found after %s" % [label, stages[i].id])
+		if i + 1 >= stages.size():
+			break
+		if stages[i + 1].destination == stages[i].destination:
+			if not await _click_button(_gs, "다음 스테이지"):
+				_fail("'다음 스테이지' not found after %s" % stages[i].id)
+				break
+			continue
+		# Last stage of a destination: no cross-destination "next"; go back to the sheet,
+		# then open the next destination and start it from its sheet.
+		if _find_button(_gs, "다음 스테이지") != null:
+			_fail("'다음 스테이지' offered across destinations after %s" % stages[i].id)
+		if not await _click_button(_gs, "여행지로 돌아가기"):
+			_fail("'여행지로 돌아가기' not found after %s" % stages[i].id)
+			break
+		await _frames_wait(20)
+		await _shot("%02d_%s_sheet" % [i + 1, stages[i].destination])
+		main.show_destination(str(stages[i + 1].destination))
+		await _frames_wait(20)
+		if not await _click_button(main, "출발!"):
+			_fail("'출발!' not found on %s sheet" % stages[i + 1].destination)
 			break
 	await _frames_wait(20)
-	await _shot("20_stage_select_after")
-	var checks := _count_buttons_with(main, "✓")
-	print("STAGE LIST: %d stage buttons show ✓" % checks)
-	if checks != stages.size():
-		_fail("stage list shows %d cleared marks, expected %d" % [checks, stages.size()])
+	main.show_home()
+	await _frames_wait(30)
+	await _shot("20_home_after")
+	var stamps := TravelCatalog.total_stamps(App.save)
+	var cards := TravelCatalog.total_postcards(App.save)
+	print("TRAVEL: stamps=%d postcards=%d continue=%s" % [stamps, cards, TravelCatalog.continue_stage(App.save, App.entitlements)])
+	var built_dests := {}
+	for st in stages:
+		built_dests[st.destination] = true
+	if stamps != built_dests.size() or cards != stages.size():
+		_fail("expected %d stamps / %d postcards, got %d / %d" % [built_dests.size(), stages.size(), stamps, cards])
+	if not await _click_button(main, "세계 지도"):
+		_fail("world map button not found")
+	await _frames_wait(30)
+	await _shot("21_world_map")
+	main.show_home()
+	await _frames_wait(20)
 	if not await _click_button(main, "여행 앨범"):
 		_fail("album button not found")
-	await _frames_wait(20)
-	await _shot("21_album")
+	await _frames_wait(40)
+	await _shot("22_album")
 	var fresh := SaveStore.new(SAVE_PATH)
 	fresh.load_data()
 	var unlocked := []
 	for d in StageLoader.destination_order():
 		if fresh.is_unlocked(d):
 			unlocked.append(d)
-	print("SAVE ON DISK: cleared=%d unlocked=%s" % [fresh.data.cleared.size(), unlocked])
+	print("SAVE ON DISK: cleared=%d unlocked=%s last_played=%s" % [fresh.data.cleared.size(), unlocked, fresh.last_played()])
 	print("AUTOPLAY ALL: stages=%d drags=%d drag_mismatch=%d failures=%d" % [stages.size(), _drags, _drag_mismatch, _failures.size()])
 	_report()
+	get_tree().quit(0 if _failures.is_empty() else 1)
+
+
+## Screenshots of the travel screens: fresh save first, then a seeded mid-journey save
+## (Hawaii 3/3, Fuji 3/3, London 1/3, last played london_01). Writes only SAVE_PATH.
+func _run_ui_shots() -> void:
+	main.show_home()
+	await _frames_wait(30)
+	await _shot("01_home_fresh")
+	var s := App.save
+	var t := int(Time.get_unix_time_from_system()) - 86400 * 3
+	for sid in ["hawaii_01", "hawaii_02", "hawaii_03", "fuji_01", "fuji_02", "fuji_03", "london_01"]:
+		t += 3600
+		s.data.cleared[sid] = {"at": t}
+		var dest: String = TravelCatalog.split_stage_id(sid).destination
+		if not s.data.album.has(dest):
+			s.data.album[dest] = {"at": t, "first_stage": sid}
+	s.data.last_played = "london_01"
+	s.save_data()
+	var steps := [
+		["02_home", func(): main.show_home()],
+		["03_world_map", func(): main.show_world_map()],
+		["04_continent_europe", func(): main.show_continent("europe")],
+		["05_sheet_london", func(): main.show_destination("london")],
+		["06_sheet_paris_unbuilt_free", func(): main.show_destination("paris")],
+		["07_sheet_edinburgh_premium", func(): main.show_destination("edinburgh")],
+		["09_continent_asia", func(): main.show_continent("asia")],
+		["10_sheet_fuji_visited", func(): main.show_destination("fuji")],
+		["11_continent_north_america", func(): main.show_continent("north_america")],
+		["12_continent_south_america", func(): main.show_continent("south_america")],
+		["13_continent_africa", func(): main.show_continent("africa")],
+		["14_continent_oceania", func(): main.show_continent("oceania")],
+		["15_album_europe", func(): main.show_album("europe")],
+		["17_album_asia", func(): main.show_album("asia")],
+	]
+	for st in steps:
+		st[1].call()
+		await _frames_wait(45)
+		await _shot(st[0])
+		if st[0] == "07_sheet_edinburgh_premium":
+			if not await _click_button(main, "여행 패스 안내"):
+				_fail("pass info button not found")
+			await _frames_wait(10)
+			await _shot("08_pass_info")
+		if st[0] == "15_album_europe":
+			var a := main._screen as AlbumScreen
+			a._full(TravelCatalog.destination("london"), 1)
+			await _frames_wait(20)
+			await _shot("16_album_full_view")
+		if st[0] == "05_sheet_london":
+			_gs = main.show_game("london_02")
+			await _frames_wait(30)
+			await _shot("05b_game_london_02")
+	print("UI SHOTS: thumbs cached=%d failures=%d" % [App.thumbs.cached_count(), _failures.size()])
 	get_tree().quit(0 if _failures.is_empty() else 1)
 
 

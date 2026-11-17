@@ -36,6 +36,7 @@ func start(p_stage_id: String) -> void:
 		return
 	game = built.game
 	_clear_pending = -1.0
+	App.save.set_last_played(stage_id)
 	_build()
 
 
@@ -110,7 +111,7 @@ func _build() -> void:
 	bar.size = Vector2(640, 80)
 	bar.add_theme_constant_override("separation", 16)
 	add_child(bar)
-	for spec in [["목록", func(): exit_requested.emit()], ["다시 하기", func(): start(stage_id)],
+	for spec in [["여행지", func(): exit_requested.emit()], ["다시 하기", func(): start(stage_id)],
 			["설정", func(): _toggle_settings()]]:
 		var b := UiKit.button(spec[0], spec[1])
 		b.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -194,27 +195,43 @@ func _show_clear() -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 18)
 	panel.add_child(v)
+	var dest_id := str(game.destination.id)
+	var visited := TravelCatalog.is_visited(App.save, dest_id)
 	v.add_child(UiKit.label("%s 도착!" % game.destination.get("name_ko", ""), 40, UiKit.TEXT, HORIZONTAL_ALIGNMENT_CENTER))
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(580, 560)
+	v.add_child(holder)
 	var img := TextureRect.new()
-	img.texture = load(game.destination.album_path)
+	img.texture = load(game.destination.album_path)  # this stage's postcard (stage landscape or destination art)
 	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	img.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	img.custom_minimum_size = Vector2(580, 580)
-	v.add_child(img)
-	v.add_child(UiKit.label("여행 앨범에 기록되었어요", 26, UiKit.TEXT_SOFT, HORIZONTAL_ALIGNMENT_CENTER))
+	img.size = Vector2(580, 560)
+	holder.add_child(img)
+	if visited:
+		var st := StampMark.create("VISITED
+%s" % game.destination.get("name_ko", ""), 150, -12.0)
+		st.position = Vector2(420, 400)
+		holder.add_child(st)
+	var n := int(TravelCatalog.split_stage_id(stage_id).get("n", 0))
+	var msg := "%s 엽서를 얻었어요" % TravelCatalog.stage_title(stage_id) if n > 0 else "여행 앨범에 기록되었어요"
+	if visited:
+		msg = "엽서 3장을 모두 모았어요! 방문 완료 스탬프"
+	v.add_child(UiKit.label(msg, 24, UiKit.TEXT_SOFT, HORIZONTAL_ALIGNMENT_CENTER))
 	var next_id := _next_stage_id()
 	if next_id != "":
 		v.add_child(UiKit.button("다음 스테이지", func(): next_requested.emit(next_id)))
-	v.add_child(UiKit.button("스테이지 목록", func(): exit_requested.emit()))
+	v.add_child(UiKit.button("여행지로 돌아가기", func(): exit_requested.emit()))
 
 
+## Next stage of the same destination, if it is built and now playable ("" otherwise).
+## Destinations are chosen freely, so a clear never jumps to another destination.
 func _next_stage_id() -> String:
-	var list := StageLoader.stages()
-	for i in list.size():
-		if list[i].id == stage_id and i + 1 < list.size():
-			return list[i + 1].id
-	return ""
+	var p := TravelCatalog.split_stage_id(stage_id)
+	if p.is_empty():
+		return ""
+	var sid := TravelCatalog.stage_id(p.destination, p.n + 1)
+	return sid if TravelCatalog.can_play(App.save, sid, App.entitlements) else ""
 
 
 func _toggle_settings() -> void:

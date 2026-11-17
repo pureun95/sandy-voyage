@@ -11,6 +11,8 @@ const CONFIG_PATH := "res://data/game_config.json"
 static var _dest_cache := {}
 static var _stage_cache := []
 static var _config_cache := {}
+static var _stage_dest_cache := {}
+static var _asset_dir := ""
 
 
 static func _read_json(path: String) -> Variant:
@@ -32,6 +34,7 @@ static func config() -> Dictionary:
 static func destinations() -> Dictionary:
 	if _dest_cache.is_empty():
 		var cfg: Dictionary = _read_json(DESTINATIONS_PATH)
+		_asset_dir = cfg.asset_dir
 		for d in cfg.destinations:
 			var dest: Dictionary = d.duplicate(true)
 			dest.album_path = cfg.asset_dir + "/" + d.album
@@ -72,6 +75,52 @@ static func get_stage(stage_id: String) -> Dictionary:
 	return {}
 
 
+## Art + palette used by `stage`: its destination, with the stage's optional own landscape
+## laid over it. A stage without "landscape" gets the destination dict itself (unchanged
+## behaviour for the existing stages). Optional stage key (paths relative to asset_dir or res://):
+##   "landscape": { "puzzle": {"64": "...", "128": "..."}, "album": "...",
+##                  "palette": [ {"key", "name_ko", "color"} ... ] }
+## Missing parts fall back to the destination's. Returns {} for an unknown destination.
+static func stage_destination(stage: Dictionary) -> Dictionary:
+	var dest: Dictionary = destinations().get(stage.get("destination", ""), {})
+	if dest.is_empty() or not stage.has("landscape"):
+		return dest
+	var sid := str(stage.get("id", ""))
+	if _stage_dest_cache.has(sid):
+		return _stage_dest_cache[sid]
+	var ls: Dictionary = stage.landscape
+	var out := dest.duplicate(true)
+	if ls.has("puzzle"):
+		var paths := {}
+		for res in ls.puzzle:
+			paths[res] = _asset_path(str(ls.puzzle[res]))
+		out.puzzle_paths = paths
+	if ls.has("album"):
+		out.album_path = _asset_path(str(ls.album))
+	if ls.has("palette"):
+		out.palette = ls.palette
+		var colors: Array[Color] = []
+		var keys: Array[String] = []
+		for p in ls.palette:
+			keys.append(p.key)
+			colors.append(Color.html(p.color))
+		out.palette_colors = colors
+		out.palette_keys = keys
+	_stage_dest_cache[sid] = out
+	return out
+
+
+static func _asset_path(p: String) -> String:
+	return p if p.begins_with("res://") else _asset_dir + "/" + p
+
+
+## Clears cached JSON (tests that swap stage data).
+static func clear_cache() -> void:
+	_dest_cache = {}
+	_stage_cache = []
+	_stage_dest_cache = {}
+
+
 static func load_map(dest: Dictionary, resolution: int) -> SandMap:
 	var path: String = dest.puzzle_paths.get(str(resolution), "")
 	if path.is_empty():
@@ -87,7 +136,7 @@ static func load_map(dest: Dictionary, resolution: int) -> SandMap:
 ## Pass `map` to reuse an already-loaded SandMap (it is copied).
 static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> Dictionary:
 	var errors := PackedStringArray()
-	var dest: Dictionary = destinations().get(stage.get("destination", ""), {})
+	var dest := stage_destination(stage)
 	if dest.is_empty():
 		errors.append("unknown destination '%s'" % stage.get("destination", ""))
 		return {"game": null, "errors": errors}
