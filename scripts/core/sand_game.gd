@@ -14,7 +14,10 @@ signal stage_cleared
 
 var stage := {}
 var destination := {}
+## Resolution of the puzzle image actually loaded (= map size). `requested_resolution` is what
+## the caller asked for; they differ when a 128-only stage is built for a 64 request.
 var resolution := 128
+var requested_resolution := 128
 var map: SandMap
 var board: PuzzleBoard
 ## SandCollector (channel), GravityDrain or SuctionDrain (gravity); all expose step/

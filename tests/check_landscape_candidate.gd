@@ -65,6 +65,9 @@ func _init() -> void:
 	check(dest.get("album_path", "") == album_path, "stage_destination resolves res:// album path")
 	var m2 := StageLoader.load_map(dest, 128)
 	check(m2 != null, "StageLoader.load_map with palette (from_image_with_palette)")
+	# A 128-only landscape under a 64 request (debug build with 64 saved): StageLoader falls back.
+	if not dest.puzzle_paths.has("64"):
+		check(StageLoader.puzzle_resolution(dest, 64) == 128, "64 request -> 128 image (StageLoader fallback)")
 
 	var counts := map.count_by_color()
 	var stats := SandMapAnalyzer.color_stats(map, 3)

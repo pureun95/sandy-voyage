@@ -47,6 +47,7 @@ func blk(id: String, color: int, shape: String, pos: Vector2i, cap: int) -> Sand
 
 func _init() -> void:
 	test_palette_mapping()
+	test_resolution_fallback()
 	test_movement()
 	test_contact_rules()
 	test_shared_channel_rescan()
@@ -65,7 +66,10 @@ func test_palette_mapping() -> void:
 	var dests := StageLoader.destinations()
 	for id in dests:
 		var d: Dictionary = dests[id]
-		for res in [64, 128]:
+		# Every image the destination has (existing ones: 64 and 128; new ones may be 128 only).
+		check(d.puzzle_paths.has("128"), "%s has a 128 puzzle image" % id)
+		for res_key in d.puzzle_paths:
+			var res := int(res_key)
 			var m := StageLoader.load_map(d, res)
 			check(m != null, "%s@%d maps onto named palette" % [id, res])
 			if m == null:
@@ -97,6 +101,77 @@ func test_palette_mapping() -> void:
 	bad.set_pixel(1, 0, Color.WHITE)
 	check(SandMap.from_image_with_palette(bad, [Color.BLACK, Color.RED] as Array[Color]) == null,
 		"color far from palette is rejected")
+
+
+## In-memory copy of a real stage whose landscape lists only `puzzle` (no data files touched).
+func stage_with_puzzle(base_id: String, new_id: String, puzzle: Dictionary) -> Dictionary:
+	var s: Dictionary = StageLoader.get_stage(base_id).duplicate(true)
+	s.id = new_id
+	s.landscape = {"puzzle": puzzle}
+	return s
+
+
+func test_resolution_fallback() -> void:
+	print("[resolution fallback: 128-only stages]")
+	var hawaii: Dictionary = StageLoader.destinations().hawaii
+	var p128: String = hawaii.puzzle_paths["128"]
+
+	# 1. Existing stage with a 64 image: the requested image is used as before.
+	for res in [64, 128]:
+		var b := StageLoader.build(StageLoader.get_stage("hawaii_02"), res)
+		var g: SandGame = b.game
+		check(b.errors.is_empty() and g.resolution == res and g.requested_resolution == res
+			and g.map.width == res, "existing hawaii_02 @%d loads its own %d image" % [res, res])
+	check(StageLoader.puzzle_resolution(hawaii, 64) == 64, "puzzle_resolution keeps 64 when the image exists")
+
+	# 2. New stage with only a 128 image, built at 128.
+	var only128 := stage_with_puzzle("hawaii_02", "__test_only128", {"128": p128})
+	var dest128 := StageLoader.stage_destination(only128)
+	check(dest128.puzzle_paths.keys() == ["128"], "test stage really has only a 128 image")
+	var b128 := StageLoader.build(only128, 128)
+	check(b128.errors.is_empty() and b128.game.resolution == 128, "128-only stage builds at 128")
+
+	# 5. Same stage asked for 64 (debug build with 64 saved): falls back to the 128 image.
+	check(StageLoader.puzzle_resolution(dest128, 64) == 128, "puzzle_resolution: 64 -> 128 fallback")
+	var b64 := StageLoader.build(only128, 64)
+	var g64: SandGame = b64.game
+	check(g64 != null and b64.errors.is_empty(), "128-only stage @64 builds without errors %s" % [b64.errors])
+	if g64 != null:
+		check(g64.resolution == 128 and g64.requested_resolution == 64, "game records loaded 128, requested 64")
+		check(g64.map.width == 128 and g64.map.height == 128, "sand map is the 128 image (16384 grains)")
+		check(g64.map.width % g64.board.cols == 0, "sand width divisible by board columns")
+		# Board/capacity math follows the loaded map, identical to a direct 128 build.
+		var caps := {}
+		var caps128 := {}
+		for b in g64.board.blocks:
+			caps[b.id] = b.capacity
+		for b in b128.game.board.blocks:
+			caps128[b.id] = b.capacity
+		check(caps == caps128, "block capacities equal the 128 build (%s)" % [caps])
+		var counts := g64.map.count_by_color()
+		var per_color := PackedInt32Array()
+		per_color.resize(counts.size())
+		for b in g64.board.blocks:
+			per_color[b.color_id] += b.capacity
+		check(per_color == counts, "capacity per color == sand per color")
+		var sc: float = StageLoader.config().get("grains_per_second_at_128", 800.0)
+		check(is_equal_approx(g64.grains_per_second, b128.game.grains_per_second),
+			"speeds scale from the loaded map, same as @128 (%.0f, base %.0f)" % [g64.grains_per_second, sc])
+		var v := LevelValidator.validate(only128, 64)
+		check(v.ok and int(v.loaded_resolution) == 128, "validator @64 checks the 128 fallback (%s)" % v.get("status"))
+
+	# 6. The 128 image itself is missing: reported, never hidden.
+	var missing := stage_with_puzzle("hawaii_02", "__test_missing128",
+		{"128": "res://assets/destinations/__no_such_puzzle_128.png"})
+	for res in [128, 64]:
+		var bm := StageLoader.build(missing, res)
+		check(bm.game == null and not bm.errors.is_empty(),
+			"missing 128 file @%d -> build fails with an error (%s)" % [res, bm.errors])
+	var no128 := stage_with_puzzle("hawaii_02", "__test_no128", {"64": hawaii.puzzle_paths["64"]})
+	var bn := StageLoader.build(no128, 128)
+	check(bn.game == null and not bn.errors.is_empty(), "stage without any 128 entry @128 -> error (%s)" % [bn.errors])
+	var vn := LevelValidator.validate(missing, 64)
+	check(not vn.ok and vn.status == "not_built", "validator reports the missing 128 image")
 
 
 func test_movement() -> void:

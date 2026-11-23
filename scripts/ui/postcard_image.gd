@@ -12,6 +12,27 @@ var full_res := false     # load the original (single large view) instead of a t
 var _tex: Texture2D
 var _check := 0.0
 
+## Pixel-art postcards are 256 px; the large views draw postcards with a LINEAR filter at
+## non-integer scales, which blurs small art. Such art is first enlarged by an integer factor
+## with NEAREST (crisp, evenly sized pixels) and then takes the same LINEAR path as the
+## 1024 px postcards. 1024 px art is returned unchanged.
+const SMALL_ART_MAX_PX := 256
+const SMALL_ART_SCALE := 4
+
+
+static func display_texture(tex: Texture2D) -> Texture2D:
+	if tex == null or maxi(tex.get_width(), tex.get_height()) > SMALL_ART_MAX_PX:
+		return tex
+	var shared := tex.get_image()
+	if shared == null or shared.is_empty():
+		return tex
+	# get_image() may hand out the texture's own Image (e.g. headless renderer): never resize it.
+	var img := shared.duplicate() as Image
+	if img.is_compressed():
+		img.decompress()
+	img.resize(img.get_width() * SMALL_ART_SCALE, img.get_height() * SMALL_ART_SCALE, Image.INTERPOLATE_NEAREST)
+	return ImageTexture.create_from_image(img)
+
 
 static func create(p_path: String, min_size: Vector2, p_placeholder := "", p_dim := false) -> PostcardImage:
 	var p := PostcardImage.new()
@@ -27,7 +48,7 @@ static func create(p_path: String, min_size: Vector2, p_placeholder := "", p_dim
 
 func _ready() -> void:
 	if full_res and path != "":
-		_tex = load(path)
+		_tex = display_texture(load(path))
 	elif path != "":
 		App.thumbs.thumb_ready.connect(_on_ready)
 		_refresh()

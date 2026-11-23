@@ -13,6 +13,8 @@ static func validate(stage: Dictionary, resolution := 128, max_states := 100000)
 	if game == null:
 		report.merge({"ok": false, "errors": errors, "warnings": warnings, "status": "not_built"})
 		return report
+	# Image resolution actually validated (128 when a 128-only stage is asked for 64).
+	report.loaded_resolution = game.resolution
 
 	errors.append_array(game.board.validate())
 

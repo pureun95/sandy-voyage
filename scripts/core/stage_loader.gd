@@ -121,6 +121,7 @@ static func clear_cache() -> void:
 	_stage_dest_cache = {}
 
 
+## Strict: loads exactly the `resolution` image (no fallback). Null + error when it is missing.
 static func load_map(dest: Dictionary, resolution: int) -> SandMap:
 	var path: String = dest.puzzle_paths.get(str(resolution), "")
 	if path.is_empty():
@@ -128,22 +129,46 @@ static func load_map(dest: Dictionary, resolution: int) -> SandMap:
 		return null
 	var tex := load(path) as Texture2D
 	if tex == null:
+		push_error("StageLoader: %s %d puzzle image cannot be loaded: %s" % [dest.id, resolution, path])
 		return null
 	return SandMap.from_image_with_palette(tex.get_image(), dest.palette_colors)
 
 
+## New landscapes ship a 128 puzzle image only.
+const FALLBACK_RESOLUTION := 128
+
+
+## Resolution whose image `build` loads for a `requested` one: the requested image when the
+## stage has it (existing 64/128 stages unchanged), else 128 when only 128 exists. When 128 is
+## missing too, `requested` is returned so the missing image is reported, never hidden.
+static func puzzle_resolution(dest: Dictionary, requested: int) -> int:
+	var paths: Dictionary = dest.get("puzzle_paths", {})
+	if paths.has(str(requested)):
+		return requested
+	if paths.has(str(FALLBACK_RESOLUTION)):
+		return FALLBACK_RESOLUTION
+	return requested
+
+
 ## Builds a stage. Returns { game: SandGame or null, errors: PackedStringArray }.
-## Pass `map` to reuse an already-loaded SandMap (it is copied).
+## Pass `map` to reuse an already-loaded SandMap (it is copied). Without `map`, a request for a
+## resolution the stage has no image for falls back to 128 (see puzzle_resolution);
+## game.resolution is then 128 and game.requested_resolution the original request.
 static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> Dictionary:
 	var errors := PackedStringArray()
 	var dest := stage_destination(stage)
 	if dest.is_empty():
 		errors.append("unknown destination '%s'" % stage.get("destination", ""))
 		return {"game": null, "errors": errors}
-	var m := map.duplicate_map() if map != null else load_map(dest, resolution)
+	var loaded := resolution if map != null else puzzle_resolution(dest, resolution)
+	var m := map.duplicate_map() if map != null else load_map(dest, loaded)
 	if m == null:
-		errors.append("puzzle image for %s @%d could not be converted to sand" % [dest.id, resolution])
+		errors.append("puzzle image for %s @%d could not be converted to sand%s" % [dest.id, loaded,
+			"" if loaded == resolution else " (fallback for @%d)" % resolution])
 		return {"game": null, "errors": errors}
+	if map == null and (m.width != loaded or m.height != loaded):
+		errors.append("puzzle image for %s @%d is %dx%d, expected %dx%d" % [dest.id, loaded, m.width,
+			m.height, loaded, loaded])
 
 	var board := PuzzleBoard.new()
 	board.cols = int(stage.board.cols)
@@ -170,7 +195,8 @@ static func build(stage: Dictionary, resolution := 128, map: SandMap = null) -> 
 	var game := SandGame.new()
 	game.stage = stage
 	game.destination = dest
-	game.resolution = resolution
+	game.resolution = m.width if map == null else resolution
+	game.requested_resolution = resolution
 	game.setup(m, board, str(stage.get("physics", "channel")), str(stage.get("collect", "drain")))
 	var cfg := config()
 	var base: float = float(cfg.get("grains_per_second_at_128", 800.0))

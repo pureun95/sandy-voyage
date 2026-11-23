@@ -202,7 +202,8 @@ func _show_clear() -> void:
 	holder.custom_minimum_size = Vector2(580, 560)
 	v.add_child(holder)
 	var img := TextureRect.new()
-	img.texture = load(game.destination.album_path)  # this stage's postcard (stage landscape or destination art)
+	# This stage's postcard (stage landscape or destination art); 256 px art is pre-scaled x4.
+	img.texture = PostcardImage.display_texture(load(game.destination.album_path))
 	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	img.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
