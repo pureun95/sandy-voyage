@@ -1,0 +1,10 @@
+[
+ {"key": "stone_light",   "name_ko": "석축 밝은 면", "color": "#f6c3a7"},
+ {"key": "stone_shadow",  "name_ko": "석축 그림자", "color": "#a48297"},
+ {"key": "roof_dark",     "name_ko": "기와·윤곽",   "color": "#574654"},
+ {"key": "blossom",       "name_ko": "구름·진달래", "color": "#f99fc5"},
+ {"key": "pine",          "name_ko": "소나무·산",   "color": "#6b7c56"},
+ {"key": "wall_gold",     "name_ko": "솔잎·담장",   "color": "#e5c547"},
+ {"key": "sky",           "name_ko": "하늘",        "color": "#b798f4"},
+ {"key": "dancheong_red", "name_ko": "기둥·단청",   "color": "#c65c46"}
+]

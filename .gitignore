@@ -20,6 +20,13 @@ override.cfg
 *.jks
 export_credentials.cfg
 
+# art_src/ (see art_src/README.md): sources are committed; review outputs that
+# tools/landscape_pipeline.py and the comparison scripts regenerate are not.
+art_src/**/*_comparison.png
+art_src/**/*_auto.png
+art_src/**/*_report.json
+art_src/**/album_display_check.png
+
 # Python helpers (analysis venvs, caches)
 .venv/
 venv/
