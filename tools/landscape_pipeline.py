@@ -306,6 +306,7 @@ def dark_priority(album_idx, album_rgb, centers_lab, rect):
 
 def apply_touchup(idx, spec, color_index, album_idx=None, album_rgb=None, centers_lab=None):
     """spec (JSON, puzzle px, colors as palette key or #hex):
+       album_recolor: [{rect, from: [colors], album: {album #hex: color}, min_votes}, ...]
        dark_priority: [[x0,y0,x1,y1], ...]   rule-based detail pass (needs the album)
        outline_bright: [[x0,y0,x1,y1,L,fill,edge], ...]  album-bright stone -> fill + 1px edge
        adaptive_two_tone: [[x0,y0,x1,y1,light,shadow,win], ...]  local-mean split of two tones
@@ -315,6 +316,27 @@ def apply_touchup(idx, spec, color_index, album_idx=None, album_rgb=None, center
        pixels: [[x,y,color], ...]
        Edits are applied in this order. Returns (idx, number of changed pixels)."""
     out = idx.copy()
+    for r in spec.get("album_recolor", []):
+        # Wrong sand color where the album shows a known material: inside rect, pixels whose
+        # sand color is in `from` and whose 2x2 album block has >= min_votes pixels of the
+        # listed album colors take that color's target (e.g. roof tiles quantized to sky).
+        x0, y0, x1, y1 = r["rect"]
+        frm = {color_index(c) for c in r["from"]}
+        hexes = ["#%02x%02x%02x" % tuple(c) for c in album_rgb]
+        target = {hexes.index(h.lower()): color_index(t) for h, t in r["album"].items() if h.lower() in hexes}
+        need = int(r.get("min_votes", 2))
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                if out[y, x] not in frm:
+                    continue
+                votes = {}
+                for i in album_idx[2 * y:2 * y + 2, 2 * x:2 * x + 2].ravel():
+                    if i in target:
+                        votes[target[i]] = votes.get(target[i], 0) + 1
+                if votes:
+                    best = max(votes.items(), key=lambda kv: kv[1])
+                    if best[1] >= need:
+                        out[y, x] = best[0]
     for r in spec.get("dark_priority", []):
         x0, y0, x1, y1 = r
         out[y0:y1, x0:x1] = dark_priority(album_idx, album_rgb, centers_lab, r)
