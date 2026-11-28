@@ -1,6 +1,7 @@
 extends SceneTree
 ## Level validation tool.
 ##   godot --headless --path . -s res://tests/validate_levels.gd [-- --res=128 --stage=hawaii_01 --plan]
+##   ... -- --extra=res://tests/fixtures/gyeongju_test_stages.json   also test-only stages (memory only)
 ## Exit code 1 when any stage fails.
 
 
@@ -15,6 +16,8 @@ func _init() -> void:
 			only = a.substr(8)
 		elif a == "--plan":
 			show_plan = true
+		elif a.begins_with("--extra="):
+			print("extra stages: ", load("res://tests/stage_fixture.gd").inject(a.substr(8)))
 	var bad := 0
 	for stage in StageLoader.stages():
 		if only != "" and stage.id != only:

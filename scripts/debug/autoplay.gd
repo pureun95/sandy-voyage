@@ -10,6 +10,12 @@ extends Node
 ##   godot --path . -- --autoplay=verify-save                           new process: check saved progress
 ##   godot --path . -- --autoplay=ui-shots --shots=DIR                  screenshots of every travel screen
 ##        (fresh save, then a seeded mid-journey save; isolated save file)
+##   ... --extra-stages=res://tests/fixtures/gyeongju_test_stages.json   test-only stages, injected in
+##        memory (data/*.json untouched; save is the isolated autoplay file as always)
+##   ... --probe --shots=DIR   sand render probe (single stage): every frame checks the uploaded sand
+##        texture against SandMap.cells; every `probe_every` frames hides the grain fx for one frame
+##        and compares the rendered screen (cell centres) with the cells; saves the landscape+board
+##        area every `frame_every` frames to DIR/frames/ (for a GIF/video). Report: DIR/probe.json
 
 const SAVE_PATH := "user://autoplay_save.json"
 
@@ -23,6 +29,13 @@ var _recording := false
 var _drags := 0
 var _drag_mismatch := 0
 var _failures := PackedStringArray()
+var probe := false
+var probe_every := 30
+var frame_every := 4
+var _probe := {}
+var _orig := PackedByteArray()
+var _frame_no := 0
+var _taken := {}   # cell index -> frame it was collected (refill tracking)
 
 
 func _ready() -> void:
@@ -32,6 +45,17 @@ func _ready() -> void:
 			shots_dir = a.substr(8)
 		elif a.begins_with("--res="):
 			res = int(a.substr(6))
+		elif a.begins_with("--extra-stages="):
+			print("AUTOPLAY extra stages: ", load("res://tests/stage_fixture.gd").inject(a.substr(15)))
+		elif a == "--probe":
+			probe = true
+		elif a.begins_with("--probe-every="):
+			probe_every = int(a.substr(14))
+		elif a.begins_with("--frame-every="):
+			frame_every = int(a.substr(14))
+	if probe and shots_dir == "":
+		push_error("autoplay: --probe needs --shots=DIR (frames, diffs and probe.json go there)")
+		probe = false
 	if stage_id == "verify-save":
 		_verify_save.call_deferred()
 		return
@@ -84,6 +108,9 @@ func _run_one() -> void:
 	_gs = main.show_game(stage_id)
 	await _frames_wait(30)
 	await _shot("01_start")
+	if probe:
+		_probe_begin()
+		await _probe_screen("start")
 	var t0 := Time.get_ticks_msec()
 	await _play_current(true)
 	var play_s := (Time.get_ticks_msec() - t0) / 1000.0
@@ -93,6 +120,8 @@ func _run_one() -> void:
 		stage_id, _gs.game.map.width, _gs.game.cleared, _drags, _drag_mismatch, play_s, _gs.game.remaining,
 		App.save.is_unlocked(_gs.game.destination.id)])
 	_report()
+	if probe:
+		_probe_report()
 	var ok := _gs.game.cleared and _failures.is_empty()
 	main.show_album()
 	await _frames_wait(20)
@@ -276,6 +305,8 @@ func _play_current(take_shots: bool) -> void:
 		var idle := 0
 		while idle < 25 and not _gs.game.cleared:
 			await get_tree().process_frame
+			if probe:
+				await _probe_frame()
 			var busy := _gs.fx.count() > 0 or not _gs.game.is_idle()
 			idle = 0 if busy else idle + 1
 			var t := (Time.get_ticks_msec() - t0) / 1000.0
@@ -302,6 +333,8 @@ func _drag(m: Dictionary) -> void:
 	for i in range(1, n + 1):
 		_mouse_motion(start + delta * (float(i) / n))
 		await get_tree().process_frame
+		if probe:
+			await _probe_frame()
 	_mouse_button(start + delta, false)
 	await get_tree().process_frame
 	_drags += 1
@@ -386,3 +419,208 @@ func _report() -> void:
 	if shots_dir != "":
 		var f := FileAccess.open(shots_dir.path_join("stats.json"), FileAccess.WRITE)
 		f.store_string(JSON.stringify(rep, "\t"))
+
+
+# ---------------------------------------------------------------- sand render probe
+
+func _probe_begin() -> void:
+	var g := _gs.game
+	_orig = g.map.cells.duplicate()
+	if shots_dir != "":
+		DirAccess.make_dir_recursive_absolute(shots_dir.path_join("probe"))
+		FileAccess.open(shots_dir.path_join("probe/cells_00000.bin"), FileAccess.WRITE).store_buffer(_orig)
+	_frame_no = 0
+	_probe = {"stage": stage_id, "res": g.map.width, "frames": 0, "tex_checks": 0, "tex_mismatch_frames": 0,
+		"tex_mismatch_cells_max": 0, "screen_checks": 0, "screen_mismatch_max": 0, "screen_mismatch_total": 0,
+		"screen_ghost_total": 0, "screen_hole_total": 0, "float_idle_frames": 0, "float_idle_max": 0,
+		"timeline": [], "taken": 0, "taken_buried": 0, "refill_within_5f": 0, "refill_within_30f": 0,
+		"still_empty_after_30f": 0}
+	g.grains_collected.connect(_on_probe_grains)
+	DirAccess.make_dir_recursive_absolute(shots_dir.path_join("frames"))
+	DirAccess.make_dir_recursive_absolute(shots_dir.path_join("probe"))
+
+
+## Called right after process_frame: last frame's tick + texture upload are both done, so the
+## uploaded texture must equal map.cells exactly.
+func _probe_frame() -> void:
+	var g := _gs.game
+	_frame_no += 1
+	_probe.frames += 1
+	var tex_cells := _gs.sand_view.texture.get_image().get_data()
+	_probe.tex_checks += 1
+	if tex_cells != g.map.cells:
+		var diff := 0
+		for i in tex_cells.size():
+			if tex_cells[i] != g.map.cells[i]:
+				diff += 1
+		_probe.tex_mismatch_frames += 1
+		_probe.tex_mismatch_cells_max = maxi(_probe.tex_mismatch_cells_max, diff)
+	# Grains resting on an empty cell while the simulation is asleep would be stuck in the air.
+	if g.sim != null and not g.sim.is_active():
+		var fl := _floating(g)
+		if fl > 0:
+			_probe.float_idle_frames += 1
+			_probe.float_idle_max = maxi(_probe.float_idle_max, fl)
+	_track_refill(g)
+	if _frame_no % 10 == 0:
+		_probe.timeline.append(_timeline_row(g))
+	if _frame_no % 60 == 0 and shots_dir != "":
+		var f := FileAccess.open(shots_dir.path_join("probe/cells_%05d.bin" % _frame_no), FileAccess.WRITE)
+		f.store_buffer(g.map.cells)
+	if _frame_no % probe_every == 0:
+		await _probe_screen("f%05d" % _frame_no)
+	elif shots_dir != "" and _frame_no % frame_every == 0:
+		await RenderingServer.frame_post_draw
+		_save_frame()
+
+
+## Grains the simulation rule would still move (empty below, or an empty diagonal-below cell
+## that the stage's slide rule allows) - should be 0 whenever the simulation is asleep.
+func _floating(g: SandGame) -> int:
+	var w := g.map.width
+	var c := g.map.cells
+	var gap := g.sim.diagonal_needs_side_gap
+	var n := 0
+	for i in range(0, c.size() - w):
+		if c[i] == SandMap.EMPTY:
+			continue
+		var b := i + w
+		if c[b] == SandMap.EMPTY:
+			n += 1
+			continue
+		var x := i % w
+		if x > 0 and c[b - 1] == SandMap.EMPTY and (not gap or c[i - 1] == SandMap.EMPTY):
+			n += 1
+		elif x < w - 1 and c[b + 1] == SandMap.EMPTY and (not gap or c[i + 1] == SandMap.EMPTY):
+			n += 1
+	return n
+
+
+## A collected grain was "buried" when the cell above it still held sand at that moment: the
+## column above then drops into the hole, so the spot looks full again while the grain flies off.
+func _on_probe_grains(_b: SandBlock, indices: PackedInt32Array) -> void:
+	var g := _gs.game
+	var w := g.map.width
+	for i in indices:
+		_probe.taken += 1
+		if i >= w and g.map.cells[i - w] != SandMap.EMPTY:
+			_probe.taken_buried += 1
+		_taken[i] = _frame_no
+
+
+func _track_refill(g: SandGame) -> void:
+	var done := []
+	for i in _taken:
+		var age: int = _frame_no - int(_taken[i])
+		if g.map.cells[i] != SandMap.EMPTY:
+			if age <= 5:
+				_probe.refill_within_5f += 1
+			if age <= 30:
+				_probe.refill_within_30f += 1
+			done.append(i)
+		elif age > 30:
+			_probe.still_empty_after_30f += 1
+			done.append(i)
+	for i in done:
+		_taken.erase(i)
+
+
+func _timeline_row(g: SandGame) -> Dictionary:
+	var c := g.map.cells
+	var same := 0
+	var empty := 0
+	for i in c.size():
+		if c[i] == SandMap.EMPTY:
+			empty += 1
+		elif c[i] == _orig[i]:
+			same += 1
+	return {"frame": _frame_no, "remaining": g.remaining, "empty": empty,
+		"same_as_original": same, "sim_active_chunks": g.sim.active_chunks() if g.sim else 0,
+		"fx": _gs.fx.count()}
+
+
+func _land_rect_px() -> Dictionary:
+	var sv := _gs.sand_view
+	var xf := get_viewport().get_final_transform() * sv.get_global_transform_with_canvas()
+	return {"xf": xf, "size": sv.size}
+
+
+func _save_frame() -> void:
+	var img := get_viewport().get_texture().get_image()
+	var r := _land_rect_px()
+	var xf: Transform2D = r.xf
+	var bv := _gs.board_view
+	var p0: Vector2 = xf * Vector2.ZERO
+	var p1: Vector2 = xf * Vector2(r.size.x, r.size.y + bv.size.y)
+	var rect := Rect2i(Vector2i(p0), Vector2i(p1 - p0)).intersection(Rect2i(Vector2i.ZERO, img.get_size()))
+	img.get_region(rect).save_png(shots_dir.path_join("frames/%05d.png" % _frame_no))
+
+
+## Hides the flying grains for one frame, then compares every cell centre on screen with
+## map.cells: "ghost" = screen shows sand where the cell is empty, "hole" = screen shows empty
+## where there is sand, "wrong" = another sand color.
+func _probe_screen(tag: String) -> void:
+	var g := _gs.game
+	_gs.fx.visible = false
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	_gs.fx.visible = true
+	var r := _land_rect_px()
+	var xf: Transform2D = r.xf
+	var w := g.map.width
+	var gs: float = r.size.x / w
+	var pal: Array[Color] = g.map.palette
+	var empty_col := UiKit.EMPTY_SAND
+	var ghost := 0
+	var hole := 0
+	var wrong := 0
+	var cells := g.map.cells
+	var diff := Image.create(w, g.map.height, false, Image.FORMAT_RGBA8)
+	for y in g.map.height:
+		for x in w:
+			var p: Vector2 = xf * Vector2((x + 0.5) * gs, (y + 0.5) * gs)
+			var c := img.get_pixelv(Vector2i(p))
+			var best := -1
+			var bd := SandMap.color_distance(c, empty_col)
+			for k in pal.size():
+				var d := SandMap.color_distance(c, pal[k])
+				if d < bd:
+					bd = d
+					best = k
+			var want := int(cells[y * w + x])
+			var want_id := -1 if want == SandMap.EMPTY else want
+			if best == want_id:
+				diff.set_pixel(x, y, Color(pal[want_id], 0.35) if want_id >= 0 else Color(0, 0, 0, 0))
+				continue
+			if want_id < 0:
+				ghost += 1
+				diff.set_pixel(x, y, Color.RED)
+			elif best < 0:
+				hole += 1
+				diff.set_pixel(x, y, Color.BLUE)
+			else:
+				wrong += 1
+				diff.set_pixel(x, y, Color.MAGENTA)
+	var total := ghost + hole + wrong
+	_probe.screen_checks += 1
+	_probe.screen_mismatch_max = maxi(_probe.screen_mismatch_max, total)
+	_probe.screen_mismatch_total += total
+	_probe.screen_ghost_total += ghost
+	_probe.screen_hole_total += hole
+	if total > 0 or tag == "start" or _probe.screen_checks % 10 == 0:
+		diff.save_png(shots_dir.path_join("probe/%s_diff_%d.png" % [tag, total]))
+		img.save_png(shots_dir.path_join("probe/%s_screen.png" % tag))
+	if total > 0:
+		printerr("PROBE %s: screen != cells: ghost=%d hole=%d wrong=%d" % [tag, ghost, hole, wrong])
+
+
+func _probe_report() -> void:
+	_probe.viewport = str(get_viewport().get_texture().get_size())
+	print("PROBE ", JSON.stringify({"frames": _probe.frames, "tex_mismatch_frames": _probe.tex_mismatch_frames,
+		"screen_checks": _probe.screen_checks, "screen_mismatch_total": _probe.screen_mismatch_total,
+		"screen_mismatch_max": _probe.screen_mismatch_max, "float_idle_frames": _probe.float_idle_frames,
+		"float_idle_max": _probe.float_idle_max, "taken": _probe.taken, "taken_buried": _probe.taken_buried,
+		"refill_within_5f": _probe.refill_within_5f, "refill_within_30f": _probe.refill_within_30f,
+		"still_empty_after_30f": _probe.still_empty_after_30f}))
+	var f := FileAccess.open(shots_dir.path_join("probe.json"), FileAccess.WRITE)
+	f.store_string(JSON.stringify(_probe, "\t"))

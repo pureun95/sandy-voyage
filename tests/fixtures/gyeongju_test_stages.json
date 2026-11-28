@@ -1,0 +1,46 @@
+{
+	"_comment": "Test-only stage data (not in data/*.json, not exported: tests/* is excluded). Injected in memory by tests/stage_fixture.gd for autoplay (--extra-stages=) and validate_levels.gd (--extra=). Paths are res:// (no asset_dir). Palette = art_src/gyeongju/gyeongju_palette8.json.",
+	"destinations": [
+		{
+			"id": "gyeongju",
+			"name_ko": "경주",
+			"name_en": "Gyeongju",
+			"album": "res://assets/destinations/gyeongju/gyeongju_s1_v4_album256.png",
+			"puzzle": { "128": "res://assets/destinations/gyeongju/gyeongju_s1_v4_refined_puzzle128.png" },
+			"expected_colors": 8,
+			"palette": [
+				{ "key": "stone_light", "name_ko": "석축 밝은 면", "color": "#f6c3a7" },
+				{ "key": "stone_shadow", "name_ko": "석축 그림자", "color": "#a48297" },
+				{ "key": "roof_dark", "name_ko": "기와·윤곽", "color": "#574654" },
+				{ "key": "blossom", "name_ko": "구름·진달래", "color": "#f99fc5" },
+				{ "key": "pine", "name_ko": "소나무·산", "color": "#6b7c56" },
+				{ "key": "wall_gold", "name_ko": "솔잎·담장", "color": "#e5c547" },
+				{ "key": "sky", "name_ko": "하늘", "color": "#b798f4" },
+				{ "key": "dancheong_red", "name_ko": "기둥·단청", "color": "#c65c46" }
+			]
+		}
+	],
+	"stages": [
+		{
+			"id": "gyeongju_01",
+			"destination": "gyeongju",
+			"name_ko": "경주 1 · 불국사 (테스트)",
+			"physics": "gravity",
+			"collect": "suction",
+			"diagonal_needs_side_gap": false,
+			"column_wake": true,
+			"board": { "cols": 8, "rows": 5 },
+			"walls": [],
+			"blocks": [
+				{ "id": "rd", "color": "roof_dark", "shape": "I3h", "pos": [0, 0], "capacity": "auto" },
+				{ "id": "wg", "color": "wall_gold", "shape": "I2h", "pos": [5, 0], "capacity": "auto" },
+				{ "id": "dr", "color": "dancheong_red", "shape": "dot", "pos": [7, 0], "capacity": "auto" },
+				{ "id": "sk", "color": "sky", "shape": "I2h", "pos": [3, 1], "capacity": "auto" },
+				{ "id": "ss", "color": "stone_shadow", "shape": "Lr", "pos": [0, 2], "capacity": "auto" },
+				{ "id": "sl", "color": "stone_light", "shape": "O", "pos": [5, 2], "capacity": "auto" },
+				{ "id": "bl", "color": "blossom", "shape": "I2v", "pos": [7, 2], "capacity": "auto" },
+				{ "id": "pi", "color": "pine", "shape": "dot", "pos": [3, 4], "capacity": "auto" }
+			]
+		}
+	]
+}
